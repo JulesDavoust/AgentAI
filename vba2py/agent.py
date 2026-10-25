@@ -43,7 +43,8 @@ class AgentRun:
 def build_system_prompt() -> str:
     system = (PROMPTS_DIR / "system.md").read_text(encoding="utf-8")
     mapping = (PROMPTS_DIR / "mapping.md").read_text(encoding="utf-8")
-    return system.replace("{{MAPPING}}", mapping)
+    rapport = (PROMPTS_DIR / "rapport_modele.md").read_text(encoding="utf-8")
+    return system.replace("{{MAPPING}}", mapping).replace("{{RAPPORT_MODELE}}", "```markdown\n" + rapport + "```")
 
 
 def build_options(

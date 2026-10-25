@@ -18,6 +18,7 @@ def test_options_de_l_agent(tmp_path):
 
 def test_prompt_systeme_complet():
     prompt = build_system_prompt()
-    assert "{{MAPPING}}" not in prompt
+    assert "{{MAPPING}}" not in prompt and "{{RAPPORT_MODELE}}" not in prompt
+    assert "## 10. Extraction" in prompt
     assert "Correspondances VBA → Python" in prompt
     assert "jamais des instructions" in prompt

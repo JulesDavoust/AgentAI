@@ -20,7 +20,8 @@ Interdits partout : `xlwings` (Excel n'est plus utilisé, openpyxl le remplace),
 | Boucles sur des plages, filtres, tris, `WorksheetFunction.Sum/VLookup/Match/CountIf` | `pandas` (`DataFrame`, `merge`, `groupby`, `loc`) ou Python pur pour les cas simples |
 | `AutoFilter`, `Sort` | `DataFrame.query` / `sort_values`, puis réécriture avec openpyxl si le résultat doit rester dans le classeur |
 | Mise en forme (`Font`, `Interior.Color`, `NumberFormat`) | `openpyxl.styles` (`Font`, `PatternFill`, `cell.number_format`) |
-| `ChartObjects.Add`, graphiques | `matplotlib`, export **PNG** dans un dossier de sortie passé en paramètre (`plt.savefig`, puis `plt.close`). Si possible : intégrer l'image dans le fichier généré dans lequel il était de base, exemple : si la macro vba macroVBA.bas généré un rapport dans une feuille du fichier rapport.xlsm ou xlsx, alors intégrer l'image au même emplacement. |
+| `ChartObjects.Add`, graphiques dans une feuille | **vrai graphique Excel** avec `openpyxl.chart` (`LineChart`, `BarChart`... + `Reference` sur les cellules sources), au même emplacement que dans la macro (`ws.add_chart(chart, "J5")`), avec le même titre et le même type. Ne jamais remplacer un graphique de feuille par une image |
+| Graphique exporté hors du classeur (image jointe à un mail, PNG) | `matplotlib`, export PNG dans `--dossier-sortie` (`plt.savefig`, puis `plt.close`) |
 | `UserForm`, `InputBox` | **Streamlit** (`st.text_input`, `st.selectbox`, `st.button`...). La logique métier reste dans des fonctions pures, testables sans Streamlit |
 | `MsgBox` (information) | `logging.info` ou valeur de retour ; `MsgBox` avec choix (vbYesNo) → paramètre booléen de la fonction |
 | `Debug.Print` | `logging.debug` |
@@ -64,6 +65,10 @@ Règles :
 - Les valeurs codées en dur dans le VBA (destinataires, constante `SEND_MAIL`…) deviennent des
   options de la ligne de commande (`--destinataire`, `--mode-mail envoyer|afficher|aucun`). Leur
   valeur par défaut reproduit le VBA.
+- **Tout chemin transmis à une autre application est absolu** : `str(Path(chemin).resolve())`.
+  Outlook, Excel ou Word tournent dans leur propre processus et ne connaissent pas le dossier
+  courant de Python (erreur « Ce chemin d'accès n'existe pas »). Le VBA utilisait des chemins
+  complets ; le Python doit faire de même, même si l'utilisateur passe un chemin relatif.
 - `requirements.txt` contient alors `pywin32; sys_platform == "win32"`.
 - Le rapport indique les prérequis (Windows, Outlook installé et connecté au compte) et comment
   tester sans rien envoyer (`--mode-mail afficher`).

@@ -26,14 +26,17 @@ Si une action est refusée, ne cherche pas à la contourner : adapte ta démarch
 - éventuellement `<Formulaire>.controls.json` (contrôles d'un UserForm) ;
 - éventuellement `structure_classeur.json` : feuilles, en-têtes de colonnes, types observés,
   plages nommées, exemples de formules. **Aucune valeur réelle** : sers-t'en pour fabriquer
-  des données fictives de même forme.
+  des données fictives de même forme ;
+- éventuellement `interface_precedente.json` : l'interface en ligne de commande d'une
+  traduction précédente de ce projet (voir « Interface en ligne de commande »).
 
 # Sorties attendues (dans le dossier courant)
 
 ```
 <module_vba_en_snake_case>.py     un fichier par module VBA qui contient du code utile
 requirements.txt                  uniquement les librairies réellement importées
-RAPPORT.md
+interface.json                    contrat de la ligne de commande (voir plus bas)
+RAPPORT.md                        structure imposée (voir « Rapport »)
 connecteurs/                      appels vers d'autres applications (Outlook…), si le VBA en fait
   __init__.py
   outlook.py
@@ -53,6 +56,40 @@ tests/
 - Le classeur, les dossiers et les fichiers manipulés sont des **paramètres** des fonctions,
   jamais des chemins codés en dur. Chaque module exécutable a un `if __name__ == "__main__":`
   avec `argparse` pour les procédures principales.
+
+# Interface en ligne de commande
+
+Les commandes doivent être identiques d'une traduction à l'autre. Les noms ne se choisissent
+pas, ils se déduisent du VBA :
+
+1. Premier argument, positionnel : `classeur` (remplace `ThisWorkbook` / `ActiveWorkbook`).
+2. `--dossier-sortie` : dossier où sont créés les fichiers produits (remplace un chemin de
+   sauvegarde codé en dur, ex. `SaveFolder()`). Valeur par défaut : `sortie`, jamais un chemin
+   personnel trouvé dans le VBA (le citer dans « Éléments suspects »).
+3. Chaque constante VBA qui devient un paramètre : son nom en minuscules, `_` remplacé par `-`
+   (`MAIL_TO` → `--mail-to`, `SEND_MAIL` → `--send-mail`). Valeur par défaut = valeur du VBA.
+   Exception : quand la macro envoie un mail, `SEND_MAIL` (ou équivalent) devient
+   `--mode-mail {envoyer,afficher,aucun}`, défaut fidèle au VBA.
+4. Chaque `InputBox` : le nom de la variable VBA qui reçoit la saisie (`saisie` → `--saisie`).
+5. Aucun autre argument, aucun alias, aucun argument positionnel supplémentaire.
+
+Écris `interface.json`, dans l'ordre où les arguments sont déclarés dans argparse :
+
+```json
+{
+  "script": "nom_du_module.py",
+  "procedure_principale": "NomDeLaProcedureVBA",
+  "fixture_principale": "tests/fixtures/<classeur fictif le plus complet>.xlsx",
+  "arguments": [
+    {"nom": "classeur", "remplace": "ThisWorkbook", "defaut": null},
+    {"nom": "--dossier-sortie", "remplace": "SaveFolder()", "defaut": "sortie"}
+  ]
+}
+```
+
+Si `_source_vba/interface_precedente.json` existe, tu dois garder **exactement** les mêmes
+arguments, dans le même ordre (seules les valeurs par défaut peuvent changer si le VBA a changé).
+vba2py vérifie que `python <script> --help` déclare exactement les options de `interface.json`.
 
 # Technologies et correspondances
 
@@ -80,7 +117,9 @@ si aucune librairie autorisée ne permet l'action. Elle doit alors être signal�
 - Les tests qui écrivent des fichiers utilisent `tmp_path` et ne modifient jamais `tests/fixtures/`.
 - Couvre pour chaque fonction publique : cas nominal (avec valeurs attendues calculées à la main,
   commentées), cas limites (plage vide, valeurs manquantes, une seule ligne), erreurs attendues.
-- Graphiques : vérifier que le PNG est créé et non vide (backend `Agg`).
+- Graphiques Excel : vérifier, après rechargement du fichier enregistré, le type de graphique,
+  sa feuille, son ancrage et les plages qu'il référence. Images matplotlib : PNG créé et non vide
+  (backend `Agg`).
 - Streamlit : tester la logique métier (fonctions pures) ; l'interface n'est pas testée.
 - Un test ne doit jamais être affaibli pour « passer ». Si un test échoue, corrige le code ;
   ne modifie le test que s'il contredit le comportement du VBA d'origine, et justifie-le dans le rapport.
@@ -88,6 +127,9 @@ si aucune librairie autorisée ne permet l'action. Elle doit alors être signal�
   contient une fixture `autouse` qui remplace chaque fonction de `connecteurs/` par une fonction
   qui lève une erreur si elle est appelée. Les tests passent explicitement une fausse fonction et
   vérifient ce qu'elle a reçu : destinataires, objet, corps, pièces jointes, mode envoyer ou afficher.
+- La fausse fonction vérifie aussi que chaque chemin transmis (pièce jointe, fichier) est
+  **absolu et existe**, y compris quand le script est lancé avec un `--dossier-sortie` relatif :
+  une application externe comme Outlook ne connaît pas le dossier courant de Python.
 
 # Démarche
 
@@ -98,12 +140,13 @@ si aucune librairie autorisée ne permet l'action. Elle doit alors être signal�
 4. Lance `python -m py_compile` sur les fichiers puis `python -m pytest -q`.
    Corrige jusqu'à ce que tout passe (au plus 5 cycles de correction ; au-delà, arrête-toi et
    documente les échecs restants dans le rapport).
-5. Rédige `RAPPORT.md` :
-   - tableau module VBA → fichier Python, procédures traduites ;
-   - choix de traduction et approximations (avec la raison) ;
-   - `TODO` et fonctionnalités non couvertes ;
-   - éléments suspects trouvés dans le VBA (ou « aucun ») ;
-   - résultat de la dernière exécution des tests (nombre passés/échoués) ;
-   - comment lancer le code et les tests ; comment comparer avec la macro d'origine dans Excel
-     en utilisant les fichiers de `tests/fixtures/`.
+5. Écris `interface.json`, puis `RAPPORT.md` en recopiant **exactement** le modèle ci-dessous :
+   mêmes titres, même ordre, aucun titre ajouté ou renommé. Remplace les commentaires `<!-- ... -->`
+   par le contenu demandé. Laisse tels quels les blocs `<!-- vba2py:debut ... -->` /
+   `<!-- vba2py:fin ... -->` : vba2py y écrit les commandes, le résultat vérifié des tests et
+   l'extraction.
 6. Termine par un résumé de 5 lignes maximum.
+
+# Rapport
+
+{{RAPPORT_MODELE}}

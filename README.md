@@ -9,7 +9,14 @@ traduit, une batterie de tests sur données fictives et un rapport.
 python -m venv .venv
 source .venv/bin/activate          # Windows : .venv\Scripts\activate
 pip install -r requirements.txt
-export ANTHROPIC_API_KEY=...       # clé créée sur console.anthropic.com
+```
+
+Clé API (créée sur console.anthropic.com) :
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...          # macOS / Linux
+$env:ANTHROPIC_API_KEY = "sk-ant-..."        # Windows PowerShell (session en cours)
+setx ANTHROPIC_API_KEY "sk-ant-..."          # Windows, permanent (rouvrir le terminal)
 ```
 
 ## Utilisation
@@ -49,12 +56,24 @@ sortie/
     ├── _source_vba/              VBA extrait + structure du classeur (lecture seule pour l'agent)
     ├── module1.py                un fichier Python par module VBA
     ├── requirements.txt
-    ├── RAPPORT.md                choix de traduction, TODO, résultats des tests
+    ├── interface.json            contrat de la ligne de commande du script
+    ├── RAPPORT.md                structure fixe (prompts/rapport_modele.md)
     └── tests/
         ├── generer_donnees_fictives.py
         ├── fixtures/             classeurs fictifs, à ouvrir aussi dans Excel pour comparer avec la macro d'origine
         └── test_module1.py
 ```
+
+## Stabilité d'une traduction à l'autre
+
+- **Rapport** : titres et ordre imposés par `prompts/rapport_modele.md`. Les sections
+  « Commandes », « Tests » et « Extraction » sont écrites par vba2py, pas par l'agent.
+- **Commandes** : les noms d'arguments sont déduits du VBA par des règles fixes, et décrits
+  dans `interface.json`. Après une traduction réussie, ce contrat est enregistré dans
+  `interfaces/<projet>.json` (à committer) ; les traductions suivantes du même projet doivent
+  le respecter.
+- **Vérification indépendante** (`traduire` et `verifier`) : tests relancés, `--help` du script
+  comparé à `interface.json`, structure du rapport contrôlée.
 
 ## Sécurité
 

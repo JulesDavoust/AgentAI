@@ -11,24 +11,30 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import shutil
 import subprocess
 import sys
 import warnings
 from pathlib import Path
 
 from vba2py.compare import compare, format_report
-from vba2py.extract import ExtractionError, discover_projects, write_project_sources
+from vba2py.extract import SOURCE_DIRNAME, ExtractionError, discover_projects, write_project_sources
+from vba2py.livrable import INTERFACE_FILENAME, PREVIOUS_INTERFACE_FILENAME, verifier_projet
+
+# Contrats d'interface conservés d'une traduction à l'autre (un fichier par projet)
+INTERFACES_DIR = Path(__file__).resolve().parent / "interfaces"
 
 warnings.filterwarnings("ignore", category=DeprecationWarning, module="oletools")
 
 
-def cmd_extraire(args) -> list[Path]:
+def cmd_extraire(args) -> list[tuple[Path, Path]]:
+    """Retourne, pour chaque projet, (dossier de sortie, chemin relatif)."""
     projects = discover_projects(Path(args.entree))
     out_root = Path(args.sortie).resolve()
     project_dirs = []
     for project in projects:
         project_dir = write_project_sources(project, out_root)
-        project_dirs.append(project_dir)
+        project_dirs.append((project_dir, project.relative_path))
         kept = [m.name for m in project.modules if not m.is_empty]
         print(f"📄 {project.source.name} → {project_dir}")
         print(f"   {len(kept)} module(s) avec du code : {', '.join(kept) or 'aucun'}")
@@ -40,10 +46,15 @@ def cmd_extraire(args) -> list[Path]:
 def cmd_traduire(args) -> int:
     from vba2py.agent import translate_project
 
-    project_dirs = cmd_extraire(args)
+    projects = cmd_extraire(args)
     journals = Path(args.sortie).resolve() / "_journaux"
     status = 0
-    for project_dir in project_dirs:
+    for project_dir, relative_path in projects:
+        contrat = INTERFACES_DIR / relative_path.with_suffix(".json")
+        if contrat.exists():
+            shutil.copy(contrat, project_dir / SOURCE_DIRNAME / PREVIOUS_INTERFACE_FILENAME)
+            print(f"   📐 Contrat d'interface réutilisé : {contrat.relative_to(INTERFACES_DIR.parent)}")
+
         print(f"\n🤖 Traduction de {project_dir.name}…")
         run = asyncio.run(
             translate_project(
@@ -58,30 +69,28 @@ def cmd_traduire(args) -> int:
         print(f"\n   Agent : {'terminé' if run.success else 'ÉCHEC'} ({run.turns} tours, coût {cost})")
         if run.summary:
             print("   " + run.summary.strip().replace("\n", "\n   "))
-        # On ne se fie pas à ce que dit l'agent : les tests sont relancés ici.
-        if verifier_projet(project_dir) != 0 or not run.success:
+        # On ne se fie pas à ce que dit l'agent : tout est revérifié ici.
+        ok = afficher_verification(project_dir)
+        if ok and (project_dir / INTERFACE_FILENAME).exists():
+            contrat.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy(project_dir / INTERFACE_FILENAME, contrat)
+            print(f"   📐 Contrat d'interface enregistré : {contrat.relative_to(INTERFACES_DIR.parent)}")
+        if not ok or not run.success:
             status = 1
     print(f"\nJournal des actions de l'agent : {journals}")
     return status
 
 
-def verifier_projet(project_dir: Path) -> int:
+def afficher_verification(project_dir: Path) -> bool:
     print(f"\n🔎 Vérification indépendante de {project_dir.name}")
-    missing = [f for f in ("RAPPORT.md", "requirements.txt", "tests") if not (project_dir / f).exists()]
-    if missing:
-        print(f"   ❌ Éléments manquants : {', '.join(missing)}")
-        return 1
-    result = subprocess.run(
-        [sys.executable, "-m", "pytest", "-q", "tests"],
-        cwd=project_dir,
-        capture_output=True,
-        text=True,
-    )
-    last_lines = (result.stdout.strip().splitlines() or [""])[-1]
-    print(f"   {'✅' if result.returncode == 0 else '❌'} pytest : {last_lines}")
-    if result.returncode != 0:
-        print(result.stdout[-3000:])
-    return result.returncode
+    verif = verifier_projet(project_dir, project_dir / SOURCE_DIRNAME / PREVIOUS_INTERFACE_FILENAME)
+    if verif.resultat_tests:
+        print(f"   pytest : {verif.resultat_tests}")
+    for erreur in verif.erreurs:
+        print(f"   ❌ {erreur}")
+    if verif.ok:
+        print("   ✅ Livrable conforme (tests, interface, structure du rapport)")
+    return verif.ok
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -118,7 +127,7 @@ def main(argv: list[str] | None = None) -> int:
             print(format_report(results))
             return 0 if all(r.status == "identique" for r in results) else 1
         if args.commande == "verifier":
-            return verifier_projet(Path(args.projet).resolve())
+            return 0 if afficher_verification(Path(args.projet).resolve()) else 1
     except ExtractionError as exc:
         print(f"❌ {exc}", file=sys.stderr)
         return 2
