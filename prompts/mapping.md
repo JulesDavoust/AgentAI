@@ -22,8 +22,6 @@ Interdits partout : `xlwings` (Excel n'est plus utilisé, openpyxl le remplace),
 | Mise en forme (`Font`, `Interior.Color`, `NumberFormat`) | `openpyxl.styles` (`Font`, `PatternFill`, `cell.number_format`) |
 | `ChartObjects.Add`, graphiques dans une feuille | **vrai graphique Excel** avec `openpyxl.chart` (`LineChart`, `BarChart`... + `Reference` sur les cellules sources), au même emplacement que dans la macro (`ws.add_chart(chart, "J5")`), avec le même titre et le même type. Ne jamais remplacer un graphique de feuille par une image |
 | Graphique exporté hors du classeur (image jointe à un mail, PNG) | `matplotlib`, export PNG dans `--dossier-sortie` (`plt.savefig`, puis `plt.close`) |
-| `PivotCaches.Create(...)`, `CreatePivotTable`, `PivotFields(...).Orientation`, `AddDataField`, et le graphique associé (`ChartObjects.Add` + `SetSourceData pt.TableRange1`) | **Excel crée le tableau croisé et son graphique**, avec les mêmes appels que la macro : `from bibliotheque.excel_com import Graphique, preparer_feuille, creer_tableau_et_graphique_croises` (voir la docstring). Le reste du code reste en openpyxl. **Jamais** de tableau de valeurs calculé avec pandas, ni d'image à la place du graphique |
-| Nettoyage de la feuille du tableau croisé (`ChartObjects(i).Delete`, `PivotTables(i).TableRange2.Clear`, `Cells.Clear`) | `preparer_feuille(ws)` côté openpyxl, au même moment que dans la macro |
 | `UserForm`, `InputBox` | **Streamlit** (`st.text_input`, `st.selectbox`, `st.button`...). La logique métier reste dans des fonctions pures, testables sans Streamlit |
 | `MsgBox` (information) | `logging.info` ou valeur de retour ; `MsgBox` avec choix (vbYesNo) → paramètre booléen de la fonction |
 | `Debug.Print` | `logging.debug` |
@@ -75,19 +73,54 @@ Règles :
 - Le rapport indique les prérequis (Windows, Outlook installé et connecté au compte) et comment
   tester sans rien envoyer (`--mode-mail afficher`).
 
+## Ce qu'openpyxl ne sait pas faire : Excel piloté depuis Python
+
+**Règle** : openpyxl par défaut. Quand une instruction VBA n'a pas d'équivalent **fidèle** en
+openpyxl, elle est exécutée par Excel lui-même : traduis-la **instruction par instruction**,
+avec le même modèle objet Excel, dans `connecteurs/excel.py`, en utilisant
+`bibliotheque.excel_com` (`session_excel`, `xl`, `preparer_feuille`). Jamais de substitut
+approximatif : pas de valeurs figées calculées avec pandas à la place d'un tableau croisé, pas
+d'image matplotlib à la place d'un graphique Excel, pas de formule laissée non calculée quand la
+macro relit son résultat.
+
+Cas typiques (liste non exhaustive : applique la règle à tout le reste) :
+
+| VBA | Pourquoi Excel |
+|---|---|
+| `PivotCaches`, `PivotTables`, `PivotFields`, `AddDataField`, `CalculatedFields`, `Group`, `CurrentPage`, `SlicerCaches` | openpyxl ne crée ni ne modifie les tableaux croisés |
+| Graphique d'un tableau croisé (`SetSourceData pt.TableRange1`), `Chart.Export`, `CopyPicture` | dépend du tableau croisé, ou rendu fait par Excel |
+| Relire une valeur calculée par une formule (`Range("B2").Value` après `.Formula`), `Calculate` | openpyxl ne calcule pas les formules |
+| `ExportAsFixedFormat` (PDF), `PrintOut`, `PageSetup` avancé | rendu et impression |
+| `RefreshAll`, `QueryTables`, `ListObject.QueryTable`, connexions de données | actualisation de sources externes |
+| `GoalSeek`, Solveur | moteur de calcul d'Excel |
+| `AutoFilter` / `Sort` dont l'état doit rester réellement appliqué dans le classeur, `AutoFit` exact | openpyxl n'écrit que des critères, ne masque/trie/mesure rien lui-même |
+
+Exceptions (jamais exécutées, même via Excel) : `Application.Run`, macros d'autres classeurs,
+`SendKeys`, `Shell` → `# TODO(vba2py)` et section « Écarts ».
+
+Organisation :
+- `connecteurs/excel.py` contient une fonction par étape VBA concernée (ex.
+  `creer_visuel_excel(wb, ...)`), qui reçoit le `Workbook` Excel et reprend les instructions dans
+  le même ordre que la macro, plus une fonction d'entrée qui ouvre la session :
+  `with session_excel(chemin) as wb: creer_visuel_excel(wb, ...)`. Une seule session par fichier :
+  regroupe les étapes Excel consécutives.
+- Ordre du pipeline : étapes openpyxl → `wb.save(chemin)` → session Excel sur ce fichier → étapes
+  suivantes (si une étape openpyxl suit, recharge le fichier avec `load_workbook`). Si la macro
+  crée le tableau puis fait `SaveCopyAs`, c'est la copie enregistrée qui passe dans Excel.
+- Le nettoyage d'une feuille qu'Excel va remplir (`ChartObjects(i).Delete`,
+  `PivotTables(i).TableRange2.Clear`, `Cells.Clear`) se fait avec `preparer_feuille(ws)` côté
+  openpyxl ; les mêmes instructions peuvent aussi être traduites dans l'étape Excel.
+- Traduction des appels : collection avec parenthèses (`wb.PivotCaches()`, `ws.ChartObjects()`),
+  élément avec son index ou son nom (`pt.PivotFields("Date")`), méthode sans argument avec `()`
+  (`.Delete()`, `.Clear()`), arguments nommés identiques (`Periods:=` → `Periods=`),
+  `Array(...)` → tuple, constantes `xlRowField` → `xl.xlRowField`.
+- La fonction d'entrée est un **paramètre injectable** de la fonction métier (comme
+  `envoyer_mail`) ; `conftest.py` bloque `excel_com.ouvrir_excel` (fixture `autouse`).
+- `requirements.txt` contient `pywin32; sys_platform == "win32"` ; le rapport indique le
+  prérequis (Windows, Excel installé, fichier fermé dans Excel).
+
 ## Pièges sémantiques à respecter
 
-- **Tableaux croisés pilotés par Excel** :
-  - ordre : `preparer_feuille(ws)` → contenu openpyxl de la feuille (titres, KPI...) →
-    `wb.save(chemin)` → `creer_tableau_et_graphique_croises(chemin, ...)` sur le fichier
-    enregistré → seulement ensuite les actions qui utilisent ce fichier (mail...). Si la macro
-    crée le tableau puis fait `SaveCopyAs`, c'est la copie enregistrée qui reçoit le tableau ;
-  - la fonction est un **paramètre injectable** de la fonction métier (défaut :
-    `excel_com.creer_tableau_et_graphique_croises`), comme `envoyer_mail` : les tests passent une
-    fausse fonction qui vérifie les paramètres et que le chemin est absolu et existe ;
-    `conftest.py` bloque la vraie fonction (fixture `autouse`), Excel n'étant pas disponible ;
-  - `requirements.txt` contient `pywin32; sys_platform == "win32"`, et le rapport indique le
-    prérequis (Windows, Excel installé, fichier fermé dans Excel).
 - **`ByRef` est le mode par défaut en VBA** : si une procédure modifie un argument, la version Python doit retourner la nouvelle valeur (ou modifier un objet mutable) et l'appelant doit l'utiliser.
 - **Tableaux** : `Dim t(1 To 10)` ou `Option Base 1` → adapter les indices ; `UBound`/`LBound` → `len`.
 - **Division** : `/` donne un décimal, `\` est la division entière (`//` mais tronquée vers zéro pour les négatifs : utiliser `int(a / b)`), `Mod` garde le signe du dividende (`math.fmod`).

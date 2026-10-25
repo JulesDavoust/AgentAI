@@ -102,16 +102,24 @@ tools/ExportVBA.bas     macro d'export des modules depuis Excel
 tests/                  tests de l'outil (sans appel à l'IA) : python -m pytest
 ```
 
-## Tableaux croisés dynamiques (branche `pivot-excel`)
+## Ce qu'openpyxl ne sait pas faire : Excel piloté depuis Python (branche `pivot-excel`)
 
-Le code traduit reste en openpyxl, mais le tableau croisé dynamique et son graphique sont
-créés **par Excel lui-même**, avec les mêmes appels que la macro, grâce au module testé
-`bibliotheque/excel_com.py` fourni à chaque projet (l'agent ne peut pas le modifier).
+Règle de traduction : openpyxl par défaut ; tout ce qu'openpyxl ne sait pas faire fidèlement
+(tableaux croisés dynamiques sous toutes leurs formes, graphiques croisés, segments, recalcul
+des formules, export PDF, impression, actualisation de données...) est exécuté **par Excel
+lui-même**. L'agent traduit ces instructions VBA une à une vers le même modèle objet Excel,
+dans `connecteurs/excel.py` : aucune liste de cas à prévoir, toute fonction qu'une macro
+utilise est disponible.
 
-- Excel est lancé en arrière-plan dans une instance séparée et invisible, sans exécuter les
-  macros du classeur, puis refermé.
-- Le fichier enregistré contient les valeurs calculées par Excel : rien à recalculer à
-  l'ouverture, pas de souci en Mode protégé.
-- Prérequis : Windows, Excel installé, `pywin32` ; le fichier ne doit pas être ouvert dans Excel.
-- Les tests de l'agent remplacent Excel par une fausse fonction ; le test réel
-  (`tests/test_excel_com.py::test_excel_reel`) ne s'exécute que sous Windows.
+Le module testé `bibliotheque/excel_com.py`, fourni à chaque projet (l'agent ne peut pas le
+modifier), apporte la partie commune :
+- `session_excel(chemin)` : instance d'Excel séparée et invisible, macros du classeur
+  désactivées, chemin complet, enregistrement puis fermeture garantie même en cas d'erreur ;
+- `xl` : constantes Excel (`xl.xlRowField`, `xl.xlSum`...) ;
+- `EnregistreurCOM` : faux Excel pour les tests, qui note chaque instruction reçue ; les tests
+  comparent cette séquence aux instructions de la macro ;
+- `preparer_feuille(ws)` : nettoyage côté openpyxl avant qu'Excel ne remplisse la feuille.
+
+Prérequis à l'exécution des scripts traduits : Windows, Excel installé, `pywin32`, fichier
+fermé dans Excel. Le test sur Excel réel (`tests/test_excel_com.py::test_excel_reel`) ne
+s'exécute que sous Windows.

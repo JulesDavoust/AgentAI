@@ -42,9 +42,10 @@ recopie pas et ne les modifie pas (vba2py le vérifie).
 requirements.txt                  uniquement les librairies réellement importées
 interface.json                    contrat de la ligne de commande (voir plus bas)
 RAPPORT.md                        structure imposée (voir « Rapport »)
-connecteurs/                      appels vers d'autres applications (Outlook…), si le VBA en fait
+connecteurs/                      appels vers d'autres applications, si le VBA en fait
   __init__.py
-  outlook.py
+  outlook.py                      mails Outlook
+  excel.py                        ce qu'openpyxl ne sait pas faire (voir la table de correspondance)
 tests/
   __init__.py
   conftest.py                     fixtures pytest (chemins vers les données fictives)
@@ -122,19 +123,24 @@ si aucune librairie autorisée ne permet l'action. Elle doit alors être signal�
 - Les tests qui écrivent des fichiers utilisent `tmp_path` et ne modifient jamais `tests/fixtures/`.
 - Couvre pour chaque fonction publique : cas nominal (avec valeurs attendues calculées à la main,
   commentées), cas limites (plage vide, valeurs manquantes, une seule ligne), erreurs attendues.
-- Tableaux croisés créés par Excel : vérifier les paramètres reçus par la fausse fonction
-  (feuille, nom, table source, ancre, champs, fonction, formats, graphique) et l'ordre des
-  étapes (fichier enregistré avant, mail après). Ne reteste pas l'intérieur de `bibliotheque/`.
+- Étapes Excel (`connecteurs/excel.py`) : chaque fonction d'étape est testée avec
+  `EnregistreurCOM("wb")` ; le test vérifie que **chaque instruction du bloc VBA** a son
+  équivalent, dans le même ordre (`wb.instructions()`, `wb.appels(...)`, `wb.affectations(...)`).
+  Le pipeline est testé avec une fausse fonction d'entrée : paramètres, chemin absolu et existant,
+  ordre des étapes (fichier enregistré avant, mail après). Ne reteste pas `bibliotheque/`.
 - Graphiques Excel : vérifier, après rechargement du fichier enregistré, le type de graphique,
   sa feuille, son ancrage et les plages qu'il référence. Images matplotlib : PNG créé et non vide
   (backend `Agg`).
 - Streamlit : tester la logique métier (fonctions pures) ; l'interface n'est pas testée.
 - Un test ne doit jamais être affaibli pour « passer ». Si un test échoue, corrige le code ;
   ne modifie le test que s'il contredit le comportement du VBA d'origine, et justifie-le dans le rapport.
-- Aucun test ne doit déclencher une action réelle (mail, appel COM, réseau). `conftest.py`
-  contient une fixture `autouse` qui remplace chaque fonction de `connecteurs/` par une fonction
-  qui lève une erreur si elle est appelée. Les tests passent explicitement une fausse fonction et
-  vérifient ce qu'elle a reçu : destinataires, objet, corps, pièces jointes, mode envoyer ou afficher.
+- Aucun test ne doit déclencher une action réelle (mail, lancement d'Excel, réseau). `conftest.py`
+  contient une fixture `autouse` qui remplace par une fonction levant une erreur : les fonctions
+  de `connecteurs/outlook.py`, les fonctions d'entrée de `connecteurs/excel.py` (celles qui
+  ouvrent une session) et `bibliotheque.excel_com.ouvrir_excel`. Les fonctions d'étape Excel,
+  qui reçoivent un `Workbook`, restent testables avec `EnregistreurCOM`. Les tests passent
+  explicitement une fausse fonction et vérifient ce qu'elle a reçu : destinataires, objet,
+  corps, pièces jointes, mode envoyer ou afficher, paramètres des étapes Excel.
 - La fausse fonction vérifie aussi que chaque chemin transmis (pièce jointe, fichier) est
   **absolu et existe**, y compris quand le script est lancé avec un `--dossier-sortie` relatif :
   une application externe comme Outlook ne connaît pas le dossier courant de Python.

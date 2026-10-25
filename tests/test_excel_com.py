@@ -1,160 +1,99 @@
-"""Module bibliotheque/excel_com.py, testé avec de faux objets COM (Excel n'est pas disponible ici)."""
+"""Module bibliotheque/excel_com.py, testé avec l'enregistreur (Excel n'est pas disponible ici)."""
 
 import sys
 
 import pytest
 
 from vba2py.bibliotheque import excel_com
-from vba2py.bibliotheque.excel_com import Graphique, creer_tableau_et_graphique_croises, preparer_feuille
+from vba2py.bibliotheque.excel_com import EnregistreurCOM, preparer_feuille, session_excel, xl
 
 
-class Objet:
-    """Objet COM factice : enregistre les affectations et les appels."""
-
-    def __init__(self, journal, nom, **attrs):
-        object.__setattr__(self, "_journal", journal)
-        object.__setattr__(self, "_nom", nom)
-        for k, v in attrs.items():
-            object.__setattr__(self, k, v)
-
-    def __setattr__(self, cle, valeur):
-        self._journal.append((f"{self._nom}.{cle}", valeur))
-        object.__setattr__(self, cle, valeur)
-
-
-class Collection:
-    def __init__(self, items):
-        self.items = items
-
-    @property
-    def Count(self):
-        return len(self.items)
-
-
-class FauxExcel:
-    def __init__(self, tableaux_existants=(), graphiques_existants=()):
-        self.journal = []
-        j = self.journal
-        self.fermetures = []
-        tableau_range = Objet(j, "TableRange2", Address="$A$5:$G$22", Clear=lambda: j.append(("TableRange2.Clear()", None)))
-        self.pt = Objet(j, "pt", Name="TCD_Volume", TableRange1="<TableRange1>", TableRange2=tableau_range,
-                        PivotFields=lambda nom: self.champs.setdefault(nom, Objet(j, f"champ[{nom}]")),
-                        AddDataField=self._add_data_field)
-        self.champs = {}
-        cache = Objet(j, "cache", CreatePivotTable=lambda dest, nom: j.append(("CreatePivotTable", (dest._nom, nom))) or self.pt)
-        self.graphiques = list(graphiques_existants)
-        self.tableaux = list(tableaux_existants)
-        self.chart = Objet(j, "chart", SetSourceData=lambda src: j.append(("SetSourceData", src)),
-                           ChartTitle=Objet(j, "ChartTitle"))
-
-        def chart_objects(i=None):
-            if i is not None:
-                return self.graphiques[i - 1]
-            coll = Collection(self.graphiques)
-            coll.Add = lambda *a: j.append(("ChartObjects.Add", a)) or Objet(j, "co", Chart=self.chart)
-            return coll
-
-        ws = Objet(j, "ws",
-                   Range=lambda a: Objet(j, f"Range[{a}]", Left=100.0, Top=50.0),
-                   ChartObjects=chart_objects,
-                   PivotTables=lambda i=None: self.tableaux[i - 1] if i else Collection(self.tableaux),
-                   Columns=lambda c: Objet(j, f"Columns[{c}]", AutoFit=lambda: j.append(("AutoFit", c))))
-        self.wb = Objet(j, "wb", Worksheets=lambda nom: j.append(("Worksheets", nom)) or ws,
-                        PivotCaches=lambda: Objet(j, "caches", Create=lambda t, s: j.append(("PivotCaches.Create", (t, s))) or cache),
-                        Save=lambda: j.append(("Save", None)), Close=lambda s: self.fermetures.append(("Close", s)))
-        self.Workbooks = Objet(j, "Workbooks", Open=lambda p: j.append(("Open", p)) or self.wb)
-        self.Quit = lambda: self.fermetures.append(("Quit", None))
-
-    def _add_data_field(self, champ, libelle, fonction):
-        self.journal.append(("AddDataField", (champ._nom, libelle, fonction)))
-        return Objet(self.journal, "champ_donnees")
-
-    def appels(self, nom):
-        return [v for k, v in self.journal if k == nom]
+def creer_visuel_excel(wb):
+    """Traduction ligne à ligne de la partie TCD + graphique de CreerVisuel (marco_25_10.bas),
+    telle que l'agent doit l'écrire dans connecteurs/excel.py."""
+    ws = wb.Worksheets("Feuille1")
+    while ws.ChartObjects().Count > 0:
+        ws.ChartObjects(1).Delete()
+    while ws.PivotTables().Count > 0:
+        ws.PivotTables(1).TableRange2.Clear()
+    pc = wb.PivotCaches().Create(SourceType=xl.xlDatabase, SourceData="tblDonnees")
+    pt = pc.CreatePivotTable(TableDestination=ws.Range("A5"), TableName="TCD_Volume")
+    pt.PivotFields("Date").Orientation = xl.xlRowField
+    pt.PivotFields("Region").Orientation = xl.xlColumnField
+    champ = pt.AddDataField(pt.PivotFields("Volume_GWh"), "Volume (GWh)", xl.xlSum)
+    champ.NumberFormat = "#,##0.0"
+    pt.PivotFields("Date").NumberFormat = "dd/mm"
+    co = ws.ChartObjects().Add(Left=ws.Range("J5").Left, Top=ws.Range("J5").Top, Width=520, Height=300)
+    co.Chart.SetSourceData(pt.TableRange1)
+    co.Chart.ChartType = xl.xlLine
+    co.Chart.HasTitle = True
+    co.Chart.ChartTitle.Text = "Volumes distribues par region (GWh)"
 
 
-PARAMS = dict(feuille="Feuille1", nom="TCD_Volume", table_source="tblDonnees", ancre="A5",
-              ligne="Date", colonne="Region", valeur="Volume_GWh", libelle_valeur="Volume (GWh)",
-              format_valeurs="#,##0.0", format_lignes="dd/mm",
-              graphique=Graphique(ancre="J5", titre="Volumes distribues par region (GWh)"), autofit="A:H")
+def test_enregistreur_reproduit_la_sequence_de_la_macro():
+    wb = EnregistreurCOM("wb")
+    creer_visuel_excel(wb)
+    assert wb.instructions()[:7] == [
+        "wb.Worksheets('Feuille1')",
+        "wb.Worksheets('Feuille1').ChartObjects()",
+        "wb.Worksheets('Feuille1').PivotTables()",
+        "wb.PivotCaches()",
+        "wb.PivotCaches().Create(SourceType=1, SourceData='tblDonnees')",
+        "wb.Worksheets('Feuille1').Range('A5')",
+        "wb.PivotCaches().Create(SourceType=1, SourceData='tblDonnees').CreatePivotTable("
+        "TableDestination=<wb.Worksheets('Feuille1').Range('A5')>, TableName='TCD_Volume')",
+    ]
+    assert wb.affectations("PivotFields('Date').Orientation") == [xl.xlRowField]
+    assert wb.affectations("PivotFields('Region').Orientation") == [xl.xlColumnField]
+    [(args, _)] = wb.appels(".AddDataField")
+    assert args[1:] == ("Volume (GWh)", -4157)
+    assert wb.affectations("ChartTitle.Text") == ["Volumes distribues par region (GWh)"]
+    assert wb.affectations("Chart.ChartType") == [4]
 
 
-@pytest.fixture
-def classeur(tmp_path):
+def test_enregistreur_reponses_configurables():
+    wb = EnregistreurCOM("wb", reponses={"wb.Worksheets('Feuille1').Range('J5').Left": 300.0})
+    assert wb.Worksheets("Feuille1").Range("J5").Left == 300.0
+    assert wb.Worksheets("Feuille1").ChartObjects().Count == 0  # défaut
+    assert list(wb.Worksheets("Feuille1").ChartObjects()) == []
+
+
+def test_session_ouvre_enregistre_ferme(tmp_path):
     chemin = tmp_path / "copie.xlsm"
     chemin.write_bytes(b"")
-    return chemin
+    excel = EnregistreurCOM("excel")
+    with session_excel(chemin, excel=excel) as wb:
+        wb.Worksheets("Feuille1").Range("A1").Value = 1
+    lignes = excel.instructions()
+    assert lignes[0] == f"excel.Workbooks.Open({str(chemin.resolve())!r})"
+    assert lignes[-2].endswith(".Save()") and lignes[-1].endswith(".Close(False)")
+    assert not excel.appels("excel.Quit")  # instance fournie : pas fermée ici
 
 
-def test_memes_appels_que_la_macro(classeur):
-    excel = FauxExcel()
-    plage = creer_tableau_et_graphique_croises(classeur, excel=excel, **PARAMS)
-    assert plage == "$A$5:$G$22"
-    assert excel.appels("Open") == [str(classeur.resolve())]
-    assert excel.appels("PivotCaches.Create") == [(1, "tblDonnees")]  # xlDatabase
-    assert excel.appels("CreatePivotTable") == [("Range[A5]", "TCD_Volume")]
-    assert excel.appels("champ[Date].Orientation") == [1]  # xlRowField
-    assert excel.appels("champ[Region].Orientation") == [2]  # xlColumnField
-    assert excel.appels("AddDataField") == [("champ[Volume_GWh]", "Volume (GWh)", -4157)]  # xlSum
-    assert excel.appels("champ_donnees.NumberFormat") == ["#,##0.0"]
-    assert excel.appels("champ[Date].NumberFormat") == ["dd/mm"]
-    assert excel.appels("ChartObjects.Add") == [(100.0, 50.0, 520, 300)]  # Left/Top de J5
-    assert excel.appels("SetSourceData") == ["<TableRange1>"]
-    assert excel.appels("chart.ChartType") == [4]  # xlLine
-    assert excel.appels("ChartTitle.Text") == ["Volumes distribues par region (GWh)"]
-    assert excel.appels("AutoFit") == ["A:H"]
-    assert excel.appels("Save") == [None]
-    assert excel.fermetures == [("Close", False)]  # instance fournie : pas de Quit
-
-
-def test_instance_creee_puis_fermee(classeur, monkeypatch):
-    excel = FauxExcel()
+def test_session_chemin_relatif_et_fermeture_sur_erreur(tmp_path, monkeypatch):
+    (tmp_path / "copie.xlsm").write_bytes(b"")
+    monkeypatch.chdir(tmp_path)
+    excel = EnregistreurCOM("excel")
     monkeypatch.setattr(excel_com, "ouvrir_excel", lambda: excel)
-    creer_tableau_et_graphique_croises(classeur, **PARAMS)
-    assert excel.fermetures == [("Close", False), ("Quit", None)]
-
-
-def test_fermeture_meme_en_cas_d_erreur(classeur, monkeypatch):
-    excel = FauxExcel()
-    monkeypatch.setattr(excel_com, "ouvrir_excel", lambda: excel)
-    excel.wb.PivotCaches = lambda: (_ for _ in ()).throw(RuntimeError("source introuvable"))
     with pytest.raises(RuntimeError):
-        creer_tableau_et_graphique_croises(classeur, **PARAMS)
-    assert excel.fermetures == [("Close", False), ("Quit", None)]
+        with session_excel("copie.xlsm") as wb:
+            raise RuntimeError("échec")
+    lignes = excel.instructions()
+    assert str((tmp_path / "copie.xlsm").resolve()) in lignes[0]
+    assert not any(l.endswith(".Save()") for l in lignes)  # rien d'enregistré
+    assert lignes[-2].endswith(".Close(False)") and lignes[-1] == "excel.Quit()"
 
 
-def test_suppression_de_l_existant(classeur):
-    j = []
-    lie = Objet(j, "lie", Chart=Objet(j, "c1", PivotLayout=Objet(j, "pl", PivotTable=Objet(j, "p", Name="TCD_Volume"))),
-                Delete=lambda: j.append(("Delete", "lie")))
-    autre = Objet(j, "autre", Chart=Objet(j, "c2"), Delete=lambda: j.append(("Delete", "autre")))
-    excel = FauxExcel(graphiques_existants=[lie, autre])
-    excel.tableaux.append(excel.pt)
-    creer_tableau_et_graphique_croises(classeur, excel=excel, **PARAMS)
-    assert ("Delete", "lie") in j and ("Delete", "autre") not in j
-    assert excel.appels("TableRange2.Clear()") == [None]
-
-
-def test_chemin_relatif_rendu_absolu(classeur, monkeypatch):
-    monkeypatch.chdir(classeur.parent)
-    excel = FauxExcel()
-    creer_tableau_et_graphique_croises("copie.xlsm", excel=excel, **PARAMS)
-    assert excel.appels("Open") == [str(classeur.resolve())]
-
-
-def test_erreurs(tmp_path, classeur):
+def test_session_fichier_absent(tmp_path):
     with pytest.raises(FileNotFoundError):
-        creer_tableau_et_graphique_croises(tmp_path / "absent.xlsm", excel=FauxExcel(), **PARAMS)
-    with pytest.raises(ValueError):
-        creer_tableau_et_graphique_croises(classeur, excel=FauxExcel(), **dict(PARAMS, fonction="stdDev"))
+        with session_excel(tmp_path / "absent.xlsx", excel=EnregistreurCOM()):
+            pass
 
 
-def test_sans_colonne_ni_graphique(classeur):
-    excel = FauxExcel()
-    params = dict(PARAMS, colonne=None, graphique=None, autofit=None, format_valeurs=None, format_lignes=None)
-    creer_tableau_et_graphique_croises(classeur, excel=excel, **params)
-    assert "champ[Region].Orientation" not in [k for k, _ in excel.journal]
-    assert excel.appels("ChartObjects.Add") == []
+def test_constantes():
+    assert (xl.xlRowField, xl.xlSum, xl.xlLine, xl.xlTypePDF) == (1, -4157, 4, 0)
+    with pytest.raises(AttributeError, match="valeur numérique"):
+        xl.xlConstanteInexistante
 
 
 def test_preparer_feuille():
@@ -187,7 +126,9 @@ def test_excel_reel(tmp_path):
             d.append([dt.datetime(2026, 10, jour), r, v * jour])
     d.add_table(Table(displayName="tblDonnees", ref=f"A1:C{d.max_row}"))
     wb.save(tmp_path / "reel.xlsx")
-    creer_tableau_et_graphique_croises(tmp_path / "reel.xlsx", **PARAMS)
+    with session_excel(tmp_path / "reel.xlsx") as wbx:
+        creer_visuel_excel(wbx)
     ws = load_workbook(tmp_path / "reel.xlsx")["Feuille1"]
     assert [p.name for p in ws._pivots] == ["TCD_Volume"]
     assert ws._charts and ws._charts[0].pivotSource is not None
+    assert ws["B7"].value == 10  # valeurs calculées par Excel
