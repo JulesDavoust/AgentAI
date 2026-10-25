@@ -43,6 +43,10 @@ _FORBIDDEN_CODE = [
 
 _SHELL_METACHARACTERS = re.compile(r"[;&|`$<>\n\r]")
 
+# Modules autorisés uniquement dans connecteurs/ (intégrations Office fidèles au VBA)
+CONNECTOR_DIRNAME = "connecteurs"
+_CONNECTOR_MODULES = {"win32com", "pythoncom", "pywintypes"}
+
 
 class Guardrails:
     def __init__(self, project_dir: Path, journal_path: Path | None = None):
@@ -119,9 +123,11 @@ class Guardrails:
     def _check_python_content(self, path: str, content: str) -> tuple[bool, str]:
         if Path(path).suffix.lower() != ".py":
             return True, "fichier non Python"
+        in_connector = self._inside(path, self.project_dir / CONNECTOR_DIRNAME)
         for pattern, label in _FORBIDDEN_CODE:
-            match = pattern.search(content)
-            if match:
+            for match in pattern.finditer(content):
+                if in_connector and label == "module interdit" and match.group(2) in _CONNECTOR_MODULES:
+                    continue
                 return False, f"{label} dans {Path(path).name} : « {match.group(0).strip()} »"
         return True, "contenu Python conforme"
 

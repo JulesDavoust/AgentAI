@@ -34,6 +34,9 @@ Si une action est refusée, ne cherche pas à la contourner : adapte ta démarch
 <module_vba_en_snake_case>.py     un fichier par module VBA qui contient du code utile
 requirements.txt                  uniquement les librairies réellement importées
 RAPPORT.md
+connecteurs/                      appels vers d'autres applications (Outlook…), si le VBA en fait
+  __init__.py
+  outlook.py
 tests/
   __init__.py
   conftest.py                     fixtures pytest (chemins vers les données fictives)
@@ -53,9 +56,16 @@ tests/
 
 # Technologies et correspondances
 
-Respecte strictement la table de correspondance ci-dessous. Si une fonctionnalité VBA n'a pas
-d'équivalent raisonnable avec les librairies autorisées, n'invente pas : laisse un
-`# TODO(vba2py): ...` explicite et liste-le dans le rapport.
+Respecte strictement la table de correspondance ci-dessous. L'objectif est la **fidélité du
+comportement** : ce que fait la macro dans le monde réel (envoyer un mail, enregistrer un
+fichier, piloter une application), le code Python doit le faire aussi.
+
+Si tu ne peux pas exécuter une action pendant les tests (réseau, Outlook…), ce n'est pas une
+raison pour la retirer du code : implémente-la dans `connecteurs/` et simule-la dans les tests.
+Une version dégradée (simulation, brouillon, log à la place de l'action) n'est acceptable que
+si aucune librairie autorisée ne permet l'action. Elle doit alors être signalée par un
+`# TODO(vba2py): ...` et figurer en tête du rapport, dans une section
+« ⚠️ Écarts de comportement avec la macro d'origine ».
 
 {{MAPPING}}
 
@@ -74,6 +84,10 @@ d'équivalent raisonnable avec les librairies autorisées, n'invente pas : laiss
 - Streamlit : tester la logique métier (fonctions pures) ; l'interface n'est pas testée.
 - Un test ne doit jamais être affaibli pour « passer ». Si un test échoue, corrige le code ;
   ne modifie le test que s'il contredit le comportement du VBA d'origine, et justifie-le dans le rapport.
+- Aucun test ne doit déclencher une action réelle (mail, appel COM, réseau). `conftest.py`
+  contient une fixture `autouse` qui remplace chaque fonction de `connecteurs/` par une fonction
+  qui lève une erreur si elle est appelée. Les tests passent explicitement une fausse fonction et
+  vérifient ce qu'elle a reçu : destinataires, objet, corps, pièces jointes, mode envoyer ou afficher.
 
 # Démarche
 

@@ -1,9 +1,10 @@
 # Correspondances VBA → Python
 
 Seules ces librairies sont autorisées dans le code produit : **bibliothèque standard Python,
-openpyxl, pandas, matplotlib, streamlit, pytest**. Aucune autre dépendance.
-Interdits : `win32com`, `xlwings`, `pywin32` (dépendent de Windows et d'Excel), tout accès
-réseau, `subprocess`, `eval`/`exec`.
+openpyxl, pandas, matplotlib, streamlit, pytest**, et **pywin32** uniquement dans le dossier
+`connecteurs/` (voir « Intégrations externes »).
+Interdits partout : `xlwings` (Excel n'est plus utilisé, openpyxl le remplace), `subprocess`,
+`eval`/`exec`, et tout accès réseau en dehors de `connecteurs/`.
 
 ## Objets Excel
 
@@ -19,7 +20,7 @@ réseau, `subprocess`, `eval`/`exec`.
 | Boucles sur des plages, filtres, tris, `WorksheetFunction.Sum/VLookup/Match/CountIf` | `pandas` (`DataFrame`, `merge`, `groupby`, `loc`) ou Python pur pour les cas simples |
 | `AutoFilter`, `Sort` | `DataFrame.query` / `sort_values`, puis réécriture avec openpyxl si le résultat doit rester dans le classeur |
 | Mise en forme (`Font`, `Interior.Color`, `NumberFormat`) | `openpyxl.styles` (`Font`, `PatternFill`, `cell.number_format`) |
-| `ChartObjects.Add`, graphiques | `matplotlib`, export **PNG** dans un dossier de sortie passé en paramètre (`plt.savefig`, puis `plt.close`) |
+| `ChartObjects.Add`, graphiques | `matplotlib`, export **PNG** dans un dossier de sortie passé en paramètre (`plt.savefig`, puis `plt.close`). Si possible : intégrer l'image dans le fichier généré dans lequel il était de base, exemple : si la macro vba macroVBA.bas généré un rapport dans une feuille du fichier rapport.xlsm ou xlsx, alors intégrer l'image au même emplacement. |
 | `UserForm`, `InputBox` | **Streamlit** (`st.text_input`, `st.selectbox`, `st.button`...). La logique métier reste dans des fonctions pures, testables sans Streamlit |
 | `MsgBox` (information) | `logging.info` ou valeur de retour ; `MsgBox` avec choix (vbYesNo) → paramètre booléen de la fonction |
 | `Debug.Print` | `logging.debug` |
@@ -41,6 +42,31 @@ réseau, `subprocess`, `eval`/`exec`.
 | `Split`, `Join`, `Replace`, `Trim`, `UCase` | `str.split`, `str.join`, `str.replace`, `str.strip`, `str.upper` |
 | `Scripting.Dictionary`, `Collection` | `dict`, `list` (attention : `Dictionary` peut être insensible à la casse avec `CompareMode`) |
 | `Type ... End Type`, modules de classe | `@dataclass`, classes Python |
+
+## Intégrations externes (Outlook, Word, Access…)
+
+Une macro qui pilote une autre application Office doit garder **le même comportement réel**.
+Ne la remplace jamais par une simulation (fichier .eml, log, brouillon) sans le dire.
+
+| VBA | Python |
+|---|---|
+| `CreateObject("Outlook.Application")`, `.CreateItem(0)` | `win32com.client.Dispatch("Outlook.Application")`, `.CreateItem(0)`, dans `connecteurs/outlook.py` |
+| `.To`, `.CC`, `.Subject`, `.Body`, `.HTMLBody`, `.Attachments.Add` | mêmes propriétés et méthodes sur l'objet COM |
+| `.Send` / `.Display` | `.Send()` / `.Display()` : les deux modes doivent exister |
+
+Règles :
+- Tout appel COM ou réseau est isolé dans `connecteurs/<application>.py`. C'est le seul endroit
+  où `win32com` est importé, et **à l'intérieur des fonctions** (import paresseux), pour que le
+  reste du code s'importe sous Linux et dans les tests.
+- Le module métier ne fait jamais l'appel lui-même : il reçoit une fonction `envoyer_mail`
+  en paramètre, dont la valeur par défaut est celle du connecteur. Les tests passent une fausse
+  fonction qui enregistre les appels.
+- Les valeurs codées en dur dans le VBA (destinataires, constante `SEND_MAIL`…) deviennent des
+  options de la ligne de commande (`--destinataire`, `--mode-mail envoyer|afficher|aucun`). Leur
+  valeur par défaut reproduit le VBA.
+- `requirements.txt` contient alors `pywin32; sys_platform == "win32"`.
+- Le rapport indique les prérequis (Windows, Outlook installé et connecté au compte) et comment
+  tester sans rien envoyer (`--mode-mail afficher`).
 
 ## Pièges sémantiques à respecter
 

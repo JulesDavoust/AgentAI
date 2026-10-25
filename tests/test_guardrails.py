@@ -44,6 +44,13 @@ def test_recherche(g, projet):
 
 # ------------------------------------------------------------------ écriture
 
+def test_win32com_autorise_seulement_dans_connecteurs(g):
+    code = "def envoyer():\n    import win32com.client\n    return win32com.client.Dispatch('Outlook.Application')\n"
+    assert autorise(g, "Write", file_path="connecteurs/outlook.py", content=code)
+    assert not autorise(g, "Write", file_path="marco_25_10.py", content=code)
+    # les autres interdictions restent actives dans connecteurs/
+    assert not autorise(g, "Write", file_path="connecteurs/outlook.py", content="import subprocess\n")
+
 def test_ecriture(g, projet):
     assert autorise(g, "Write", file_path=str(projet / "module1.py"), content="def f():\n    return 1\n")
     assert autorise(g, "Write", file_path="tests/test_module1.py", content="import pytest\n")
