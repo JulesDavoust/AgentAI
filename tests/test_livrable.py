@@ -64,6 +64,15 @@ def test_livrable_conforme_et_sections_remplies(projet):
     assert (projet / "RAPPORT.md").read_text(encoding="utf-8").count("Vérification indépendante") == 1
 
 
+def test_bibliotheque_modifiee(projet):
+    from vba2py.bibliotheque import fichiers_bibliotheque, installer_bibliotheque
+
+    cible = installer_bibliotheque(projet)
+    assert verifier_projet(projet).ok
+    (cible / fichiers_bibliotheque()[0].name).write_text("# modifié", encoding="utf-8")
+    assert any("bibliotheque/ modifiée" in e for e in verifier_projet(projet).erreurs)
+
+
 def test_option_non_declaree(projet):
     interface = dict(INTERFACE, arguments=INTERFACE["arguments"][:2])
     (projet / "interface.json").write_text(json.dumps(interface), encoding="utf-8")

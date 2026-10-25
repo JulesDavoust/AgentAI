@@ -17,6 +17,7 @@ import sys
 import warnings
 from pathlib import Path
 
+from vba2py.bibliotheque import installer_bibliotheque
 from vba2py.compare import compare, format_report
 from vba2py.extract import SOURCE_DIRNAME, ExtractionError, discover_projects, write_project_sources
 from vba2py.livrable import INTERFACE_FILENAME, PREVIOUS_INTERFACE_FILENAME, verifier_projet
@@ -50,6 +51,7 @@ def cmd_traduire(args) -> int:
     journals = Path(args.sortie).resolve() / "_journaux"
     status = 0
     for project_dir, relative_path in projects:
+        installer_bibliotheque(project_dir)
         contrat = INTERFACES_DIR / relative_path.with_suffix(".json")
         if contrat.exists():
             shutil.copy(contrat, project_dir / SOURCE_DIRNAME / PREVIOUS_INTERFACE_FILENAME)

@@ -25,6 +25,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from .bibliotheque import LIBRARY_DIRNAME
 from .extract import SOURCE_DIRNAME
 
 ALLOWED_WRITE_EXTENSIONS = {".py", ".md", ".txt", ".json", ".csv", ".toml", ".ini", ".cfg"}
@@ -52,6 +53,7 @@ class Guardrails:
     def __init__(self, project_dir: Path, journal_path: Path | None = None):
         self.project_dir = project_dir.resolve()
         self.source_dir = self.project_dir / SOURCE_DIRNAME
+        self.library_dir = self.project_dir / LIBRARY_DIRNAME
         self.journal_path = journal_path
 
     # ------------------------------------------------------------------ décision
@@ -100,6 +102,8 @@ class Guardrails:
             return False, f"écriture hors du dossier du projet refusée : {path}"
         if self._inside(path, self.source_dir):
             return False, f"le code VBA source est en lecture seule : {path}"
+        if self._inside(path, self.library_dir):
+            return False, f"la bibliothèque fournie par vba2py est en lecture seule : {path}"
         if Path(path).suffix.lower() not in ALLOWED_WRITE_EXTENSIONS:
             return False, f"type de fichier non autorisé en écriture : {path}"
         return True, "écriture dans le projet"
