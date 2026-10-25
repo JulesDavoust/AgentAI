@@ -57,6 +57,8 @@ def test_ecriture(g, projet):
     assert autorise(g, "Write", file_path="RAPPORT.md", content="# Rapport")
     assert not autorise(g, "Write", file_path=str(projet.parent / "autre.py"), content="")
     assert not autorise(g, "Write", file_path="_source_vba/Module1.bas", content="")
+    assert not autorise(g, "Write", file_path="bibliotheque/module_fourni.py", content="")
+    assert not autorise(g, "Edit", file_path="bibliotheque/module_fourni.py", old_string="a", new_string="b")
     assert not autorise(g, "Write", file_path="lancer.sh", content="rm -rf /")
     assert not autorise(g, "Edit", file_path="_source_vba/Module1.bas", old_string="a", new_string="b")
 

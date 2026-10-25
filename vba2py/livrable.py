@@ -15,6 +15,7 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .bibliotheque import LIBRARY_DIRNAME, fichiers_modifies
 from .extract import SOURCE_DIRNAME
 
 PROMPTS_DIR = Path(__file__).resolve().parent.parent / "prompts"
@@ -179,6 +180,10 @@ def verifier_projet(project_dir: Path, interface_precedente: Path | None = None)
     manquants = [f for f in (REPORT_FILENAME, "requirements.txt", "tests", INTERFACE_FILENAME) if not (project_dir / f).exists()]
     if manquants:
         verif.erreurs.append(f"éléments manquants : {', '.join(manquants)}")
+
+    modifies = fichiers_modifies(project_dir)
+    if modifies:
+        verif.erreurs.append(f"{LIBRARY_DIRNAME}/ modifiée alors qu'elle est fournie par vba2py : {modifies}")
 
     interface = None
     if (project_dir / INTERFACE_FILENAME).exists():
