@@ -101,3 +101,17 @@ prompts/mapping.md      technologies autorisées et correspondances VBA → Pyth
 tools/ExportVBA.bas     macro d'export des modules depuis Excel
 tests/                  tests de l'outil (sans appel à l'IA) : python -m pytest
 ```
+
+## Tableaux croisés dynamiques (branche `pivot-excel`)
+
+Le code traduit reste en openpyxl, mais le tableau croisé dynamique et son graphique sont
+créés **par Excel lui-même**, avec les mêmes appels que la macro, grâce au module testé
+`bibliotheque/excel_com.py` fourni à chaque projet (l'agent ne peut pas le modifier).
+
+- Excel est lancé en arrière-plan dans une instance séparée et invisible, sans exécuter les
+  macros du classeur, puis refermé.
+- Le fichier enregistré contient les valeurs calculées par Excel : rien à recalculer à
+  l'ouverture, pas de souci en Mode protégé.
+- Prérequis : Windows, Excel installé, `pywin32` ; le fichier ne doit pas être ouvert dans Excel.
+- Les tests de l'agent remplacent Excel par une fausse fonction ; le test réel
+  (`tests/test_excel_com.py::test_excel_reel`) ne s'exécute que sous Windows.

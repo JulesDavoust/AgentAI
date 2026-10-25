@@ -22,6 +22,8 @@ Interdits partout : `xlwings` (Excel n'est plus utilisé, openpyxl le remplace),
 | Mise en forme (`Font`, `Interior.Color`, `NumberFormat`) | `openpyxl.styles` (`Font`, `PatternFill`, `cell.number_format`) |
 | `ChartObjects.Add`, graphiques dans une feuille | **vrai graphique Excel** avec `openpyxl.chart` (`LineChart`, `BarChart`... + `Reference` sur les cellules sources), au même emplacement que dans la macro (`ws.add_chart(chart, "J5")`), avec le même titre et le même type. Ne jamais remplacer un graphique de feuille par une image |
 | Graphique exporté hors du classeur (image jointe à un mail, PNG) | `matplotlib`, export PNG dans `--dossier-sortie` (`plt.savefig`, puis `plt.close`) |
+| `PivotCaches.Create(...)`, `CreatePivotTable`, `PivotFields(...).Orientation`, `AddDataField`, et le graphique associé (`ChartObjects.Add` + `SetSourceData pt.TableRange1`) | **Excel crée le tableau croisé et son graphique**, avec les mêmes appels que la macro : `from bibliotheque.excel_com import Graphique, preparer_feuille, creer_tableau_et_graphique_croises` (voir la docstring). Le reste du code reste en openpyxl. **Jamais** de tableau de valeurs calculé avec pandas, ni d'image à la place du graphique |
+| Nettoyage de la feuille du tableau croisé (`ChartObjects(i).Delete`, `PivotTables(i).TableRange2.Clear`, `Cells.Clear`) | `preparer_feuille(ws)` côté openpyxl, au même moment que dans la macro |
 | `UserForm`, `InputBox` | **Streamlit** (`st.text_input`, `st.selectbox`, `st.button`...). La logique métier reste dans des fonctions pures, testables sans Streamlit |
 | `MsgBox` (information) | `logging.info` ou valeur de retour ; `MsgBox` avec choix (vbYesNo) → paramètre booléen de la fonction |
 | `Debug.Print` | `logging.debug` |
@@ -75,6 +77,17 @@ Règles :
 
 ## Pièges sémantiques à respecter
 
+- **Tableaux croisés pilotés par Excel** :
+  - ordre : `preparer_feuille(ws)` → contenu openpyxl de la feuille (titres, KPI...) →
+    `wb.save(chemin)` → `creer_tableau_et_graphique_croises(chemin, ...)` sur le fichier
+    enregistré → seulement ensuite les actions qui utilisent ce fichier (mail...). Si la macro
+    crée le tableau puis fait `SaveCopyAs`, c'est la copie enregistrée qui reçoit le tableau ;
+  - la fonction est un **paramètre injectable** de la fonction métier (défaut :
+    `excel_com.creer_tableau_et_graphique_croises`), comme `envoyer_mail` : les tests passent une
+    fausse fonction qui vérifie les paramètres et que le chemin est absolu et existe ;
+    `conftest.py` bloque la vraie fonction (fixture `autouse`), Excel n'étant pas disponible ;
+  - `requirements.txt` contient `pywin32; sys_platform == "win32"`, et le rapport indique le
+    prérequis (Windows, Excel installé, fichier fermé dans Excel).
 - **`ByRef` est le mode par défaut en VBA** : si une procédure modifie un argument, la version Python doit retourner la nouvelle valeur (ou modifier un objet mutable) et l'appelant doit l'utiliser.
 - **Tableaux** : `Dim t(1 To 10)` ou `Option Base 1` → adapter les indices ; `UBound`/`LBound` → `len`.
 - **Division** : `/` donne un décimal, `\` est la division entière (`//` mais tronquée vers zéro pour les négatifs : utiliser `int(a / b)`), `Mod` garde le signe du dividende (`math.fmod`).
