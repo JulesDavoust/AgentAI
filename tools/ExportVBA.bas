@@ -2,15 +2,15 @@ Attribute VB_Name = "ExportVBA"
 Option Explicit
 
 ' Exporte tous les modules VBA du classeur actif dans un dossier "<NomDuClasseur>_vba"
-' crÃ©Ã© Ã  cÃ´tÃ© du classeur. Ce dossier peut ensuite Ãªtre donnÃ© Ã  vba2py :
+' créé à côté du classeur. Ce dossier peut ensuite être donné à vba2py :
 '     python main.py traduire "C:\...\Ventes_vba" -o sortie
 '
-' PrÃ©requis (une seule fois) : Fichier > Options > Centre de gestion de la confidentialitÃ© >
-' ParamÃ¨tres du Centre de gestion de la confidentialitÃ© > ParamÃ¨tres des macros >
-' cocher Â« AccÃ¨s approuvÃ© au modÃ¨le d'objet du projet VBA Â».
+' Prérequis (une seule fois) : Fichier > Options > Centre de gestion de la confidentialité >
+' Paramètres du Centre de gestion de la confidentialité > Paramètres des macros >
+' cocher « Accès approuvé au modèle d'objet du projet VBA ».
 '
 ' Conseil : placez ce module dans votre classeur de macros personnelles (PERSONAL.XLSB),
-' activez le classeur Ã  exporter, puis lancez ExporterModulesVBA (Alt+F8).
+' activez le classeur à exporter, puis lancez ExporterModulesVBA (Alt+F8).
 
 Public Sub ExporterModulesVBA()
     Dim wb As Workbook
@@ -34,7 +34,7 @@ Public Sub ExporterModulesVBA()
         Select Case composant.Type
             Case 1: extension = ".bas"        ' module standard
             Case 2, 100: extension = ".cls"   ' module de classe, ThisWorkbook, feuilles
-            Case 3: extension = ".frm"        ' UserForm (+ fichier .frx crÃ©Ã© automatiquement)
+            Case 3: extension = ".frm"        ' UserForm (+ fichier .frx créé automatiquement)
             Case Else: extension = ""
         End Select
         If extension <> "" Then
@@ -43,10 +43,10 @@ Public Sub ExporterModulesVBA()
         End If
     Next composant
 
-    MsgBox nombre & " module(s) exportÃ©(s) dans :" & vbCrLf & dossier, vbInformation
+    MsgBox nombre & " module(s) exporté(s) dans :" & vbCrLf & dossier, vbInformation
     Exit Sub
 
 Erreur:
     MsgBox "Export impossible : " & Err.Description & vbCrLf & vbCrLf & _
-           "VÃ©rifiez que Â« AccÃ¨s approuvÃ© au modÃ¨le d'objet du projet VBA Â» est activÃ©.", vbCritical
+           "Vérifiez que « Accès approuvé au modèle d'objet du projet VBA » est activé.", vbCritical
 End Sub
