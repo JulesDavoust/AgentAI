@@ -22,6 +22,9 @@ Interdits partout : `xlwings` (Excel n'est plus utilisé, openpyxl le remplace),
 | Mise en forme (`Font`, `Interior.Color`, `NumberFormat`) | `openpyxl.styles` (`Font`, `PatternFill`, `cell.number_format`) |
 | `ChartObjects.Add`, graphiques dans une feuille | **vrai graphique Excel** avec `openpyxl.chart` (`LineChart`, `BarChart`... + `Reference` sur les cellules sources), au même emplacement que dans la macro (`ws.add_chart(chart, "J5")`), avec le même titre et le même type. Ne jamais remplacer un graphique de feuille par une image |
 | Graphique exporté hors du classeur (image jointe à un mail, PNG) | `matplotlib`, export PNG dans `--dossier-sortie` (`plt.savefig`, puis `plt.close`) |
+| `PivotCaches.Create(...)`, `CreatePivotTable`, `PivotFields(...).Orientation`, `AddDataField` | `from bibliotheque.tableau_croise import assurer_tableau_croise` : conserve le tableau croisé s'il existe déjà, sinon le crée (interactif, recalculé par Excel à l'ouverture). Voir la docstring du module pour la correspondance des paramètres. **Jamais** de tableau de valeurs calculé avec pandas à la place |
+| Graphique d'un tableau croisé (`SetSourceData pt.TableRange1`) | `assurer_graphique_croise(wb, resultat, ancre=..., titre=..., type_graphique="ligne"/"barres", largeur_pt=..., hauteur_pt=..., nom_fichier=<nom du classeur>)` : vrai graphique croisé dynamique, conservé s'il existe |
+| `ws.Cells.Clear`, `ChartObjects(i).Delete`, `PivotTables(i).TableRange2.Clear` sur une feuille qui porte un tableau croisé | `effacer_hors_tableaux_croises(ws)` : le tableau et son graphique ne sont pas supprimés (ils sont conservés et recalculés). Ne jamais écrire dans la plage d'un tableau croisé, ni vider `ws._pivots` ou `ws._charts` à la main |
 | `UserForm`, `InputBox` | **Streamlit** (`st.text_input`, `st.selectbox`, `st.button`...). La logique métier reste dans des fonctions pures, testables sans Streamlit |
 | `MsgBox` (information) | `logging.info` ou valeur de retour ; `MsgBox` avec choix (vbYesNo) → paramètre booléen de la fonction |
 | `Debug.Print` | `logging.debug` |
@@ -75,6 +78,9 @@ Règles :
 
 ## Pièges sémantiques à respecter
 
+- **Tableaux croisés** : si `assurer_tableau_croise` lève `FormeNonPriseEnCharge` (plusieurs champs
+  en lignes, plusieurs valeurs...), ne la contourne pas : `# TODO(vba2py)` et section « Écarts ».
+  Le projet utilisant `bibliotheque/`, `requirements.txt` fixe `openpyxl==3.1.5`.
 - **`ByRef` est le mode par défaut en VBA** : si une procédure modifie un argument, la version Python doit retourner la nouvelle valeur (ou modifier un objet mutable) et l'appelant doit l'utiliser.
 - **Tableaux** : `Dim t(1 To 10)` ou `Option Base 1` → adapter les indices ; `UBound`/`LBound` → `len`.
 - **Division** : `/` donne un décimal, `\` est la division entière (`//` mais tronquée vers zéro pour les négatifs : utiliser `int(a / b)`), `Mod` garde le signe du dividende (`math.fmod`).

@@ -101,3 +101,22 @@ prompts/mapping.md      technologies autorisées et correspondances VBA → Pyth
 tools/ExportVBA.bas     macro d'export des modules depuis Excel
 tests/                  tests de l'outil (sans appel à l'IA) : python -m pytest
 ```
+
+## Tableaux croisés dynamiques (branche `pivot-openpyxl`)
+
+openpyxl ne sait pas créer de tableau croisé dynamique. vba2py fournit donc à chaque projet
+traduit un module testé, `bibliotheque/tableau_croise.py`, que l'agent utilise sans pouvoir le
+modifier :
+
+- **tableau croisé existant** : conservé tel quel et marqué « à recalculer à l'ouverture » ;
+  son graphique croisé est conservé aussi ;
+- **tableau absent** : créé (définition, cache, valeurs déjà calculées), avec un vrai
+  graphique croisé dynamique Excel.
+
+Limites :
+- formes prises en charge à la création : un champ en lignes, zéro ou un en colonnes, une valeur ;
+- le recalcul à l'ouverture est bloqué en Mode protégé (pièce jointe d'un mail) tant que
+  l'utilisateur n'a pas cliqué sur « Activer la modification » ; pour un tableau créé, les
+  valeurs déjà écrites restent visibles ;
+- validé avec LibreOffice (qui reconstruit le tableau à partir de sa seule définition) ; la
+  validation finale se fait dans Excel.

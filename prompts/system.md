@@ -30,6 +30,11 @@ Si une action est refusée, ne cherche pas à la contourner : adapte ta démarch
 - éventuellement `interface_precedente.json` : l'interface en ligne de commande d'une
   traduction précédente de ce projet (voir « Interface en ligne de commande »).
 
+`bibliotheque/` (à la racine du projet) contient des modules **fournis par vba2py, déjà testés,
+en lecture seule** (ex. `tableau_croise.py`). Utilise-les quand la table de correspondance le
+demande, importe-les (`from bibliotheque.tableau_croise import ...`), lis leurs docstrings, ne
+les recopie pas et ne les modifie pas (vba2py le vérifie).
+
 # Sorties attendues (dans le dossier courant)
 
 ```
@@ -117,6 +122,9 @@ si aucune librairie autorisée ne permet l'action. Elle doit alors être signal�
 - Les tests qui écrivent des fichiers utilisent `tmp_path` et ne modifient jamais `tests/fixtures/`.
 - Couvre pour chaque fonction publique : cas nominal (avec valeurs attendues calculées à la main,
   commentées), cas limites (plage vide, valeurs manquantes, une seule ligne), erreurs attendues.
+- Tableaux croisés : vérifier, après rechargement du fichier enregistré, que `ws._pivots`
+  contient le tableau attendu (nom, plage, source) et que le graphique croisé existe
+  (`chart.pivotSource.name`). Ne reteste pas l'intérieur de `bibliotheque/`.
 - Graphiques Excel : vérifier, après rechargement du fichier enregistré, le type de graphique,
   sa feuille, son ancrage et les plages qu'il référence. Images matplotlib : PNG créé et non vide
   (backend `Agg`).
