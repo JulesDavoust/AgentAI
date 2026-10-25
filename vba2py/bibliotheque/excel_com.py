@@ -8,7 +8,9 @@ graphique croisé, segments, recalcul des formules, export PDF, impression...) e
 seulement la partie commune et délicate :
 
 - `session_excel(chemin)` : ouvre le classeur dans une instance d'Excel séparée et invisible,
-  sans exécuter ses macros, enregistre puis referme tout, même en cas d'erreur ;
+  sans exécuter ses macros, enregistre puis referme tout, même en cas d'erreur ; si Excel refuse
+  une instruction, `ErreurExcel` indique laquelle ;
+- `excel_disponible()` : vrai sous Windows avec Excel installé (tests sur Excel réel) ;
 - `xl` : les constantes Excel (`xl.xlRowField`, `xl.xlSum`...) ;
 - `EnregistreurCOM` : un faux objet Excel pour les tests, qui note chaque instruction reçue ;
 - `preparer_feuille(ws)` : côté openpyxl, retire tableaux croisés et graphiques avant qu'Excel
@@ -37,6 +39,8 @@ dans Excel.
 
 from __future__ import annotations
 
+import datetime
+import sys
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
@@ -120,8 +124,10 @@ def ouvrir_excel():
 
 @contextmanager
 def session_excel(chemin_classeur, *, enregistrer: bool = True, excel=None):
-    """Ouvre `chemin_classeur` dans Excel et fournit le classeur (`Workbook`).
+    """Ouvre `chemin_classeur` dans Excel et fournit le classeur (`Workbook`), tracé.
 
+    Chaque instruction envoyée à Excel est notée : si Excel en refuse une, l'erreur levée
+    (`ErreurExcel`) indique laquelle, avec une explication du code d'erreur.
     À la sortie du bloc : enregistrement (si `enregistrer`), fermeture du classeur, puis de
     l'instance d'Excel si elle a été créée ici. En cas d'erreur, rien n'est enregistré mais
     tout est refermé.
@@ -132,17 +138,164 @@ def session_excel(chemin_classeur, *, enregistrer: bool = True, excel=None):
         raise FileNotFoundError(chemin)
     instance_creee = excel is None
     excel = excel if excel is not None else ouvrir_excel()
+    trace: list[str] = []
     wb = None
     try:
-        wb = excel.Workbooks.Open(chemin)
+        wb = TraceurCOM(excel, "excel", trace).Workbooks.Open(chemin)
         yield wb
         if enregistrer:
             wb.Save()
     finally:
         if wb is not None:
-            wb.Close(False)
+            _deballer(wb).Close(False)
         if instance_creee:
             excel.Quit()
+
+
+def excel_disponible() -> bool:
+    """Vrai si Excel peut être piloté ici (Windows + pywin32 + Excel installé)."""
+    if sys.platform != "win32":
+        return False
+    try:
+        import win32com.client  # noqa: F401
+        import winreg
+
+        winreg.CloseKey(winreg.OpenKey(winreg.HKEY_CLASSES_ROOT, "Excel.Application"))
+        return True
+    except Exception:
+        return False
+
+
+# --------------------------------------------------------------------------- traceur
+
+# Codes d'erreur COM fréquents (scode) et leur explication
+ERREURS_COM = {
+    -2146827284: "Excel a refusé l'opération (0x800A03EC) : nom de feuille, de tableau ou de champ "
+                 "introuvable, argument ou plage invalide, ou opération impossible dans l'état actuel "
+                 "du classeur.",
+    -2147352570: "Nom inconnu (DISP_E_UNKNOWNNAME) : propriété ou méthode mal orthographiée.",
+    -2147352573: "Membre introuvable (DISP_E_MEMBERNOTFOUND) : souvent une propriété appelée comme "
+                 "une méthode, ou l'inverse.",
+    -2147352571: "Type d'argument incorrect (DISP_E_TYPEMISMATCH).",
+    -2147352561: "Argument obligatoire manquant (DISP_E_PARAMNOTOPTIONAL).",
+    -2147352562: "Nombre d'arguments incorrect (DISP_E_BADPARAMCOUNT).",
+    -2147417848: "Excel s'est fermé ou ne répond plus (RPC_E_DISCONNECTED).",
+    -2147418111: "Excel est occupé et a rejeté l'appel (RPC_E_CALL_REJECTED) : réessayer.",
+}
+
+
+class ErreurExcel(RuntimeError):
+    """Une instruction envoyée à Excel a échoué ; le message indique laquelle."""
+
+    def __init__(self, instruction: str, erreur: Exception, precedentes: list[str]):
+        self.instruction = instruction
+        self.code = _code_com(erreur)
+        explication = ERREURS_COM.get(self.code, "Code d'erreur Excel non répertorié.")
+        detail = _description_com(erreur)
+        lignes = [f"Excel a refusé : {instruction}", f"  {explication}"]
+        if detail:
+            lignes.append(f"  Message d'Excel : {detail}")
+        if precedentes:
+            lignes.append("  Instructions précédentes :")
+            lignes += [f"    {p}" for p in precedentes]
+        super().__init__("\n".join(lignes))
+
+
+def _code_com(erreur: Exception) -> int | None:
+    args = getattr(erreur, "args", ())
+    if len(args) >= 3 and isinstance(args[2], tuple) and len(args[2]) >= 6 and args[2][5]:
+        return args[2][5]  # scode détaillé (excepinfo)
+    return args[0] if args and isinstance(args[0], int) else None
+
+
+def _description_com(erreur: Exception) -> str:
+    args = getattr(erreur, "args", ())
+    if len(args) >= 3 and isinstance(args[2], tuple) and len(args[2]) >= 3 and args[2][2]:
+        return str(args[2][2])
+    return ""
+
+
+def _est_erreur_com(erreur: Exception) -> bool:
+    return type(erreur).__name__ == "com_error"
+
+
+def _deballer(valeur):
+    if isinstance(valeur, TraceurCOM):
+        return object.__getattribute__(valeur, "_objet")
+    if isinstance(valeur, tuple):
+        return tuple(_deballer(v) for v in valeur)
+    if isinstance(valeur, list):
+        return [_deballer(v) for v in valeur]
+    return valeur
+
+
+def _formater(valeur) -> str:
+    if isinstance(valeur, TraceurCOM):
+        return object.__getattribute__(valeur, "_chemin")
+    return repr(valeur)
+
+
+_VALEURS_SIMPLES = (str, bytes, int, float, bool, type(None), tuple, list, dict, datetime.date, datetime.time)
+
+
+class TraceurCOM:
+    """Enveloppe un objet Excel réel et note chaque instruction (utilisé par `session_excel`)."""
+
+    def __init__(self, objet, chemin: str, trace: list[str]):
+        object.__setattr__(self, "_objet", objet)
+        object.__setattr__(self, "_chemin", chemin)
+        object.__setattr__(self, "_trace", trace)
+
+    def _envelopper(self, valeur, chemin: str):
+        # Valeurs simples (texte, nombre, date, tableau de valeurs) : renvoyées telles quelles ;
+        # tout le reste (objets et méthodes Excel) reste tracé.
+        if isinstance(valeur, _VALEURS_SIMPLES):
+            return valeur
+        return TraceurCOM(valeur, chemin, self._trace)
+
+    def _executer(self, instruction: str, action):
+        self._trace.append(instruction)
+        try:
+            return action()
+        except Exception as erreur:
+            if _est_erreur_com(erreur):
+                raise ErreurExcel(instruction, erreur, self._trace[-6:-1]) from erreur
+            raise
+
+    def __getattr__(self, nom: str):
+        if nom.startswith("__"):
+            raise AttributeError(nom)
+        chemin = f"{self._chemin}.{nom}"
+        try:
+            valeur = getattr(self._objet, nom)
+        except Exception as erreur:
+            if _est_erreur_com(erreur):
+                raise ErreurExcel(chemin, erreur, self._trace[-5:]) from erreur
+            raise
+        return self._envelopper(valeur, chemin)
+
+    def __setattr__(self, nom: str, valeur):
+        instruction = f"{self._chemin}.{nom} = {_formater(valeur)}"
+        self._executer(instruction, lambda: setattr(self._objet, nom, _deballer(valeur)))
+
+    def __call__(self, *args, **kwargs):
+        arguments = [_formater(a) for a in args] + [f"{k}={_formater(v)}" for k, v in kwargs.items()]
+        instruction = f"{self._chemin}({', '.join(arguments)})"
+        resultat = self._executer(
+            instruction,
+            lambda: self._objet(*_deballer(args), **{k: _deballer(v) for k, v in kwargs.items()}),
+        )
+        return self._envelopper(resultat, instruction)
+
+    def __iter__(self):
+        for i, element in enumerate(self._objet):
+            yield self._envelopper(element, f"{self._chemin}[{i}]")
+
+    def __bool__(self):
+        return bool(self._objet)
+
+    def __repr__(self):
+        return f"<Excel {self._chemin}>"
 
 
 # --------------------------------------------------------------------------- côté openpyxl

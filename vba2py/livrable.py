@@ -27,7 +27,9 @@ REPORT_FILENAME = "RAPPORT.md"
 @dataclass
 class Verification:
     erreurs: list[str] = field(default_factory=list)
+    avertissements: list[str] = field(default_factory=list)
     resultat_tests: str = ""
+    resultat_excel: str = ""
 
     @property
     def ok(self) -> bool:
@@ -172,6 +174,39 @@ def section_extraction(project_dir: Path) -> str:
     return re.sub(r"^# .*\n", "", texte, count=1).strip()
 
 
+# --------------------------------------------------------------------------- Excel réel
+
+MARQUEUR_EXCEL = "excel_reel"
+
+
+def verifier_excel_reel(project_dir: Path, verif: Verification) -> None:
+    """Les étapes de connecteurs/excel.py doivent être testées sur un vrai Excel.
+
+    Sans Excel (Linux, poste sans Office), ces tests sont ignorés : simple avertissement.
+    """
+    result = subprocess.run(
+        [sys.executable, "-m", "pytest", "-q", "-m", MARQUEUR_EXCEL, "-rs", "tests"],
+        cwd=project_dir, capture_output=True, text=True,
+    )
+    derniere = (result.stdout.strip().splitlines() or [""])[-1]
+    if result.returncode == 5:  # aucun test sélectionné
+        verif.erreurs.append(
+            f"connecteurs/excel.py existe mais aucun test marqué `{MARQUEUR_EXCEL}` ne l'exécute sur un vrai Excel"
+        )
+        verif.resultat_excel = "❌ aucun test"
+    elif result.returncode != 0:
+        verif.erreurs.append(f"tests sur Excel réel en échec : {derniere}\n{result.stdout[-3000:]}")
+        verif.resultat_excel = f"❌ **{derniere}**"
+    elif "passed" in derniere:
+        verif.resultat_excel = f"✅ **{derniere}**"
+    else:
+        verif.avertissements.append(
+            "étapes Excel non vérifiées sur un vrai Excel (indisponible sur cette machine) : "
+            f"lancer `python -m pytest -m {MARQUEUR_EXCEL}` sous Windows avec Excel"
+        )
+        verif.resultat_excel = "⚠️ non exécutés (Excel indisponible sur cette machine) — à lancer sous Windows avec Excel"
+
+
 # --------------------------------------------------------------------------- vérification complète
 
 
@@ -202,6 +237,8 @@ def verifier_projet(project_dir: Path, interface_precedente: Path | None = None)
         verif.resultat_tests = derniere
         if result.returncode != 0:
             verif.erreurs.append(f"tests en échec : {derniere}\n{result.stdout[-3000:]}")
+        if (project_dir / "connecteurs" / "excel.py").exists():
+            verifier_excel_reel(project_dir, verif)
 
     rapport_path = project_dir / REPORT_FILENAME
     if rapport_path.exists():
@@ -213,6 +250,13 @@ def verifier_projet(project_dir: Path, interface_precedente: Path | None = None)
             "tests",
             f"Vérification indépendante par vba2py : `python -m pytest -q tests` → {statut} **{verif.resultat_tests}**",
         )
+        if verif.resultat_excel:
+            rapport = remplir_section(
+                rapport, "tests",
+                f"Vérification indépendante par vba2py : `python -m pytest -q tests` → {statut} "
+                f"**{verif.resultat_tests}**\n\nTests sur Excel réel (`python -m pytest -m {MARQUEUR_EXCEL}`) : "
+                f"{verif.resultat_excel}",
+            )
         rapport = remplir_section(rapport, "extraction", section_extraction(project_dir))
         if interface is not None:
             rapport = remplir_section(rapport, "commandes", commandes(interface))

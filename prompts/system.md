@@ -128,6 +128,18 @@ si aucune librairie autorisée ne permet l'action. Elle doit alors être signal�
   équivalent, dans le même ordre (`wb.instructions()`, `wb.appels(...)`, `wb.affectations(...)`).
   Le pipeline est testé avec une fausse fonction d'entrée : paramètres, chemin absolu et existant,
   ordre des étapes (fichier enregistré avant, mail après). Ne reteste pas `bibliotheque/`.
+- **Tests sur Excel réel** (obligatoires dès que `connecteurs/excel.py` existe) :
+  `tests/test_excel_reel.py`, avec
+  `pytestmark = [pytest.mark.excel_reel, pytest.mark.skipif(not excel_disponible(), reason="Excel indisponible")]`
+  (`from bibliotheque.excel_com import excel_disponible`) ; le marqueur est déclaré dans
+  `conftest.py` (`pytest_configure`). Chaque test copie une fixture dans `tmp_path`, prépare le
+  fichier comme le pipeline (étapes openpyxl puis `wb.save`), appelle **la vraie** fonction
+  d'entrée de `connecteurs/excel.py`, recharge le fichier avec openpyxl et vérifie le résultat
+  produit par Excel (ex. `ws._pivots` : nom et plage du tableau croisé ; graphique avec
+  `pivotSource` ; valeurs calculées dans les cellules). Un test par fonction d'entrée au minimum.
+  Sur une machine sans Excel, ces tests sont ignorés et vba2py le signale ; sur une machine avec
+  Excel, ils s'exécutent pendant ta boucle de correction : si l'un échoue avec `ErreurExcel`,
+  lis l'instruction refusée et corrige la traduction.
 - Graphiques Excel : vérifier, après rechargement du fichier enregistré, le type de graphique,
   sa feuille, son ancrage et les plages qu'il référence. Images matplotlib : PNG créé et non vide
   (backend `Agg`).

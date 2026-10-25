@@ -88,6 +88,10 @@ def afficher_verification(project_dir: Path) -> bool:
     verif = verifier_projet(project_dir, project_dir / SOURCE_DIRNAME / PREVIOUS_INTERFACE_FILENAME)
     if verif.resultat_tests:
         print(f"   pytest : {verif.resultat_tests}")
+    if verif.resultat_excel:
+        print(f"   Excel réel : {verif.resultat_excel}")
+    for avertissement in verif.avertissements:
+        print(f"   ⚠️  {avertissement}")
     for erreur in verif.erreurs:
         print(f"   ❌ {erreur}")
     if verif.ok:

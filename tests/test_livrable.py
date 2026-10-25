@@ -120,3 +120,28 @@ def test_commandes_sans_mail():
     interface = dict(INTERFACE, arguments=INTERFACE["arguments"][:1])
     texte = commandes(interface)
     assert "--mode-mail" not in texte and "python macro.py tests/fixtures/classeur.xlsx\n" in texte
+
+
+CONFTEST_MARQUEUR = 'def pytest_configure(config):\n    config.addinivalue_line("markers", "excel_reel: Excel réel")\n'
+
+
+@pytest.mark.parametrize(
+    "test_excel, ok, attendu",
+    [
+        (None, False, "❌ aucun test"),
+        ("import pytest\n@pytest.mark.excel_reel\n@pytest.mark.skip(reason='pas d Excel')\ndef test_x():\n    pass\n",
+         True, "⚠️ non exécutés"),
+        ("import pytest\n@pytest.mark.excel_reel\ndef test_x():\n    pass\n", True, "✅ **1 passed"),
+        ("import pytest\n@pytest.mark.excel_reel\ndef test_x():\n    assert False\n", False, "❌ **1 failed"),
+    ],
+)
+def test_etapes_excel_verifiees_sur_excel_reel(projet, test_excel, ok, attendu):
+    (projet / "connecteurs").mkdir()
+    (projet / "connecteurs" / "excel.py").write_text("", encoding="utf-8")
+    (projet / "tests" / "conftest.py").write_text(CONFTEST_MARQUEUR, encoding="utf-8")
+    if test_excel:
+        (projet / "tests" / "test_excel_reel.py").write_text(test_excel, encoding="utf-8")
+    verif = verifier_projet(projet)
+    assert verif.ok is ok, verif.erreurs
+    assert verif.resultat_excel.startswith(attendu)
+    assert "Tests sur Excel réel" in (projet / "RAPPORT.md").read_text(encoding="utf-8")

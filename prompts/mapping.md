@@ -115,7 +115,11 @@ Organisation :
   (`.Delete()`, `.Clear()`), arguments nommés identiques (`Periods:=` → `Periods=`),
   `Array(...)` → tuple, constantes `xlRowField` → `xl.xlRowField`.
 - La fonction d'entrée est un **paramètre injectable** de la fonction métier (comme
-  `envoyer_mail`) ; `conftest.py` bloque `excel_com.ouvrir_excel` (fixture `autouse`).
+  `envoyer_mail`) ; `conftest.py` bloque `excel_com.ouvrir_excel` (fixture `autouse`), sauf pour
+  les tests marqués `excel_reel`.
+- Si Excel refuse une instruction, `session_excel` lève `ErreurExcel`, dont le message cite
+  l'instruction refusée et explique le code d'erreur : ne l'avale pas, journalise `str(erreur)`
+  en entier.
 - `requirements.txt` contient `pywin32; sys_platform == "win32"` ; le rapport indique le
   prérequis (Windows, Excel installé, fichier fermé dans Excel).
 

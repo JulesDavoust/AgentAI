@@ -123,3 +123,23 @@ modifier), apporte la partie commune :
 Prérequis à l'exécution des scripts traduits : Windows, Excel installé, `pywin32`, fichier
 fermé dans Excel. Le test sur Excel réel (`tests/test_excel_com.py::test_excel_reel`) ne
 s'exécute que sous Windows.
+
+### Vérification sur Excel réel
+
+Les tests de l'agent remplacent Excel par un enregistreur d'instructions : ils vérifient que la
+traduction suit la macro, mais pas qu'Excel accepte chaque instruction. Chaque projet qui pilote
+Excel contient donc aussi `tests/test_excel_reel.py` (marqueur `excel_reel`), qui exécute les
+étapes Excel pour de vrai sur un classeur fictif :
+
+- quand vba2py tourne sur un poste Windows avec Excel, ces tests s'exécutent automatiquement
+  pendant la traduction : l'agent voit l'instruction refusée et la corrige avant de livrer ;
+- sinon ils sont ignorés, et la vérification l'indique (« ⚠️ non exécutés ») ; les lancer
+  ensuite sous Windows : `python -m pytest -m excel_reel`.
+
+En cas de refus d'Excel, l'erreur `ErreurExcel` indique l'instruction exacte, par exemple :
+
+```
+Excel a refusé : wb.PivotCaches().Create(SourceType=1, SourceData='tblDonnees').CreatePivotTable(...)
+  Excel a refusé l'opération (0x800A03EC) : nom de feuille, de tableau ou de champ introuvable, ...
+  Instructions précédentes : ...
+```

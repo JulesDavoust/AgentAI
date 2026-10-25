@@ -84,6 +84,96 @@ def test_session_chemin_relatif_et_fermeture_sur_erreur(tmp_path, monkeypatch):
     assert lignes[-2].endswith(".Close(False)") and lignes[-1] == "excel.Quit()"
 
 
+class com_error(Exception):  # même nom que pywintypes.com_error
+    pass
+
+
+ERREUR_03EC = com_error(-2147352567, "Une exception s'est produite.", (0, None, None, None, 0, -2146827284), None)
+
+
+class FauxCache:
+    _oleobj_ = object()
+
+    def CreatePivotTable(self, TableDestination, TableName):
+        raise ERREUR_03EC
+
+
+class FauxClasseur:
+    """Objet « réel » minimal : se comporte comme un objet COM (attribut _oleobj_)."""
+
+    _oleobj_ = object()
+
+    def __init__(self):
+        self.recu = {}
+
+    def Worksheets(self, nom):
+        feuille = FauxClasseur()
+        feuille.nom = nom
+        return feuille
+
+    def Range(self, adresse):
+        plage = FauxClasseur()
+        plage.adresse = adresse
+        return plage
+
+    def PivotCaches(self):
+        return self
+
+    def Create(self, SourceType, SourceData):
+        self.recu["Create"] = (SourceType, SourceData)
+        return FauxCache()
+
+    def Save(self):
+        self.recu["Save"] = True
+
+    def Close(self, enregistrer):
+        self.recu["Close"] = enregistrer
+
+
+class FauxExcel:
+    def __init__(self):
+        self.classeur = FauxClasseur()
+        self.Workbooks = self
+
+    def Open(self, chemin):
+        return self.classeur
+
+
+def test_traceur_indique_l_instruction_refusee(tmp_path):
+    from vba2py.bibliotheque.excel_com import ErreurExcel
+
+    (tmp_path / "c.xlsx").write_bytes(b"")
+    excel = FauxExcel()
+    with pytest.raises(ErreurExcel) as info:
+        with session_excel(tmp_path / "c.xlsx", excel=excel) as wb:
+            ws = wb.Worksheets("Feuille1")
+            ws.Range("A1").Value = "Titre"  # affectation transmise à l'objet réel
+            pc = wb.PivotCaches().Create(SourceType=xl.xlDatabase, SourceData="tblDonnees")
+            pc.CreatePivotTable(TableDestination=ws.Range("A5"), TableName="TCD_Volume")
+    message = str(info.value)
+    assert message.splitlines()[0] == (
+        "Excel a refusé : excel.Workbooks.Open(%r).PivotCaches().Create(SourceType=1, SourceData='tblDonnees')"
+        ".CreatePivotTable(TableDestination=excel.Workbooks.Open(%r).Worksheets('Feuille1').Range('A5'), "
+        "TableName='TCD_Volume')" % ((str((tmp_path / "c.xlsx").resolve()),) * 2)
+    )
+    assert "0x800A03EC" in message
+    assert "SourceData='tblDonnees'" in message  # instructions précédentes
+    assert info.value.code == -2146827284
+    assert excel.classeur.recu["Create"] == (1, "tblDonnees")  # arguments déballés
+    assert "Save" not in excel.classeur.recu and excel.classeur.recu["Close"] is False
+
+
+def test_traceur_transmet_valeurs_et_erreurs_python(tmp_path):
+    (tmp_path / "c.xlsx").write_bytes(b"")
+    excel = FauxExcel()
+    with session_excel(tmp_path / "c.xlsx", excel=excel) as wb:
+        plage = wb.Worksheets("Feuille1").Range("B2")
+        assert plage.adresse == "B2"  # valeur simple : renvoyée telle quelle
+        with pytest.raises(AttributeError):
+            wb.ProprieteInexistante  # erreur Python : non transformée
+    assert excel.classeur.recu == {"Save": True, "Close": False}
+
+
 def test_session_fichier_absent(tmp_path):
     with pytest.raises(FileNotFoundError):
         with session_excel(tmp_path / "absent.xlsx", excel=EnregistreurCOM()):
