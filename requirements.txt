@@ -1,0 +1,13 @@
+# Outil vba2py
+claude-agent-sdk>=0.2.170
+oletools>=0.60
+openpyxl>=3.1
+
+# Librairies autorisées pour le code traduit et ses tests
+pandas>=2.2
+matplotlib>=3.8
+streamlit>=1.40
+pytest>=8
+
+# Tests de l'outil uniquement (création d'un .xlsm de test)
+xlsxwriter>=3.2
