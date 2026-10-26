@@ -151,11 +151,17 @@ def test_traceur_indique_l_instruction_refusee(tmp_path):
             pc = wb.PivotCaches().Create(SourceType=xl.xlDatabase, SourceData="tblDonnees")
             pc.CreatePivotTable(TableDestination=ws.Range("A5"), TableName="TCD_Volume")
     message = str(info.value)
-    assert message.splitlines()[0] == (
-        "Excel a refusé : excel.Workbooks.Open(%r).PivotCaches().Create(SourceType=1, SourceData='tblDonnees')"
-        ".CreatePivotTable(TableDestination=excel.Workbooks.Open(%r).Worksheets('Feuille1').Range('A5'), "
-        "TableName='TCD_Volume')" % ((str((tmp_path / "c.xlsx").resolve()),) * 2)
-    )
+    lignes = message.splitlines()
+    assert lignes[0] == "Excel a refusé : o5.CreatePivotTable(TableDestination=o6, TableName='TCD_Volume')"
+    chemin = str((tmp_path / "c.xlsx").resolve())
+    # définitions des objets utilisés, dans l'ordre de création, sans les autres
+    assert lignes[lignes.index("  Objets utilisés :") + 1:lignes.index("  Instructions précédentes :")] == [
+        f"    wb = excel.Workbooks.Open({chemin!r})",
+        "    o2 = wb.Worksheets('Feuille1')",
+        "    o4 = wb.PivotCaches()",
+        "    o5 = o4.Create(SourceType=1, SourceData='tblDonnees')",
+        "    o6 = o2.Range('A5')",
+    ]
     assert "0x800A03EC" in message
     assert "SourceData='tblDonnees'" in message  # instructions précédentes
     assert info.value.code == -2146827284

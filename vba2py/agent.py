@@ -40,6 +40,27 @@ class AgentRun:
     denials: list = field(default_factory=list)
 
 
+# Estimation grossière du coût d'une traduction, tirée des premiers essais (avec marge) :
+# coût fixe + coût par millier de lignes de VBA, pour un modèle de la gamme Sonnet.
+COUT_FIXE_USD = 1.0
+COUT_PAR_MILLE_LIGNES_USD = 1.5
+FACTEURS_MODELE = {"claude-haiku": 0.25, "claude-sonnet": 1.0, "claude-opus": 2.0, "claude-fable": 5.0}
+
+
+def lignes_de_vba(project_dir: Path) -> int:
+    total = 0
+    for fichier in (project_dir / "_source_vba").glob("*"):
+        if fichier.suffix.lower() in {".bas", ".cls", ".frm"}:
+            total += sum(1 for l in fichier.read_text(encoding="utf-8").splitlines()
+                         if l.strip() and not l.lstrip().startswith(("'", "Attribute ")))
+    return total
+
+
+def estimer_budget(nb_lignes: int, modele: str) -> float:
+    facteur = next((f for prefixe, f in FACTEURS_MODELE.items() if modele.startswith(prefixe)), 2.0)
+    return round((COUT_FIXE_USD + COUT_PAR_MILLE_LIGNES_USD * nb_lignes / 1000) * facteur, 2)
+
+
 def build_system_prompt() -> str:
     system = (PROMPTS_DIR / "system.md").read_text(encoding="utf-8")
     mapping = (PROMPTS_DIR / "mapping.md").read_text(encoding="utf-8")
@@ -94,7 +115,10 @@ async def translate_project(project_dir: Path, journal_path: Path | None, verbos
             run.turns = message.num_turns
             run.cost_usd = message.total_cost_usd
             run.denials = list(message.permission_denials or [])
-            if message.is_error:
+            if message.subtype == "error_max_budget_usd":
+                run.summary = (run.summary + "\n\n" if run.summary else "") + \
+                    "⚠️ Budget atteint : la traduction a été interrompue. Relancez avec un --budget plus élevé."
+            elif message.is_error:
                 run.summary = run.summary or f"arrêt : {message.subtype}"
     return run
 

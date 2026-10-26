@@ -45,7 +45,7 @@ def cmd_extraire(args) -> list[tuple[Path, Path]]:
 
 
 def cmd_traduire(args) -> int:
-    from vba2py.agent import translate_project
+    from vba2py.agent import estimer_budget, lignes_de_vba, translate_project
 
     projects = cmd_extraire(args)
     journals = Path(args.sortie).resolve() / "_journaux"
@@ -57,7 +57,15 @@ def cmd_traduire(args) -> int:
             shutil.copy(contrat, project_dir / SOURCE_DIRNAME / PREVIOUS_INTERFACE_FILENAME)
             print(f"   📐 Contrat d'interface réutilisé : {contrat.relative_to(INTERFACES_DIR.parent)}")
 
-        print(f"\n🤖 Traduction de {project_dir.name}…")
+        nb_lignes = lignes_de_vba(project_dir)
+        estimation = estimer_budget(nb_lignes, args.modele)
+        print(f"\n🤖 Traduction de {project_dir.name} ({nb_lignes} lignes de VBA, budget {args.budget:.2f} $)…")
+        if args.budget < estimation:
+            print(
+                f"   ⚠️  Budget probablement insuffisant : environ {estimation:.2f} $ conseillés pour "
+                f"{nb_lignes} lignes avec {args.modele}. Sans marge, l'agent risque de s'arrêter avant d'avoir "
+                f"corrigé les tests (relancer avec --budget {max(estimation, args.budget):.0f} ou plus)."
+            )
         run = asyncio.run(
             translate_project(
                 project_dir,

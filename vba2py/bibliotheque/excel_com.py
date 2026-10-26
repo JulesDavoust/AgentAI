@@ -40,6 +40,7 @@ dans Excel.
 from __future__ import annotations
 
 import datetime
+import re
 import sys
 from contextlib import contextmanager
 from pathlib import Path
@@ -138,10 +139,9 @@ def session_excel(chemin_classeur, *, enregistrer: bool = True, excel=None):
         raise FileNotFoundError(chemin)
     instance_creee = excel is None
     excel = excel if excel is not None else ouvrir_excel()
-    trace: list[str] = []
     wb = None
     try:
-        wb = TraceurCOM(excel, "excel", trace).Workbooks.Open(chemin)
+        wb = TraceurCOM(excel, "excel").Workbooks.Open(chemin)
         yield wb
         if enregistrer:
             wb.Save()
@@ -187,18 +187,35 @@ ERREURS_COM = {
 class ErreurExcel(RuntimeError):
     """Une instruction envoyée à Excel a échoué ; le message indique laquelle."""
 
-    def __init__(self, instruction: str, erreur: Exception, precedentes: list[str]):
+    def __init__(self, instruction: str, erreur: Exception, precedentes: list[str], definitions: dict | None = None):
         self.instruction = instruction
         self.code = _code_com(erreur)
         explication = ERREURS_COM.get(self.code, "Code d'erreur Excel non répertorié.")
         detail = _description_com(erreur)
-        lignes = [f"Excel a refusé : {instruction}", f"  {explication}"]
+        lignes = [f"Excel a refusé : {instruction}"]
         if detail:
             lignes.append(f"  Message d'Excel : {detail}")
+        lignes.append(f"  {explication}")
+        utilises = _objets_utilises(instruction, definitions or {})
+        if utilises:
+            lignes.append("  Objets utilisés :")
+            lignes += [f"    {nom} = {definitions[nom]}" for nom in utilises]
         if precedentes:
             lignes.append("  Instructions précédentes :")
             lignes += [f"    {p}" for p in precedentes]
         super().__init__("\n".join(lignes))
+
+
+def _objets_utilises(texte: str, definitions: dict) -> list[str]:
+    """Noms courts (wb, o1, o2...) cités dans `texte`, avec ceux dont ils dépendent, dans l'ordre de création."""
+    trouves: set[str] = set()
+    a_voir = re.findall(r"\b(wb|o\d+)\b", texte)
+    while a_voir:
+        nom = a_voir.pop()
+        if nom in definitions and nom not in trouves:
+            trouves.add(nom)
+            a_voir += re.findall(r"\b(wb|o\d+)\b", definitions[nom])
+    return [nom for nom in definitions if nom in trouves]
 
 
 def _code_com(erreur: Exception) -> int | None:
@@ -238,28 +255,46 @@ def _formater(valeur) -> str:
 _VALEURS_SIMPLES = (str, bytes, int, float, bool, type(None), tuple, list, dict, datetime.date, datetime.time)
 
 
-class TraceurCOM:
-    """Enveloppe un objet Excel réel et note chaque instruction (utilisé par `session_excel`)."""
+class _Etat:
+    """Trace commune à tous les objets d'une session : instructions et noms courts des objets."""
 
-    def __init__(self, objet, chemin: str, trace: list[str]):
+    def __init__(self):
+        self.trace: list[str] = []
+        self.definitions: dict[str, str] = {}
+
+    def nommer(self, instruction: str, chemin_appele: str) -> str:
+        nom = "wb" if chemin_appele.endswith("Workbooks.Open") and "wb" not in self.definitions else f"o{len(self.definitions) + 1}"
+        self.definitions[nom] = instruction
+        return nom
+
+
+class TraceurCOM:
+    """Enveloppe un objet Excel réel et note chaque instruction (utilisé par `session_excel`).
+
+    Chaque objet renvoyé par un appel reçoit un nom court (`wb`, `o1`, `o2`...) : les messages
+    d'erreur restent lisibles et citent la définition des objets utilisés.
+    """
+
+    def __init__(self, objet, chemin: str, etat: _Etat | None = None):
         object.__setattr__(self, "_objet", objet)
         object.__setattr__(self, "_chemin", chemin)
-        object.__setattr__(self, "_trace", trace)
+        object.__setattr__(self, "_etat", etat or _Etat())
 
     def _envelopper(self, valeur, chemin: str):
         # Valeurs simples (texte, nombre, date, tableau de valeurs) : renvoyées telles quelles ;
         # tout le reste (objets et méthodes Excel) reste tracé.
         if isinstance(valeur, _VALEURS_SIMPLES):
             return valeur
-        return TraceurCOM(valeur, chemin, self._trace)
+        return TraceurCOM(valeur, chemin, self._etat)
 
     def _executer(self, instruction: str, action):
-        self._trace.append(instruction)
+        trace = self._etat.trace
+        trace.append(instruction)
         try:
             return action()
         except Exception as erreur:
             if _est_erreur_com(erreur):
-                raise ErreurExcel(instruction, erreur, self._trace[-6:-1]) from erreur
+                raise ErreurExcel(instruction, erreur, trace[-6:-1], self._etat.definitions) from erreur
             raise
 
     def __getattr__(self, nom: str):
@@ -270,7 +305,7 @@ class TraceurCOM:
             valeur = getattr(self._objet, nom)
         except Exception as erreur:
             if _est_erreur_com(erreur):
-                raise ErreurExcel(chemin, erreur, self._trace[-5:]) from erreur
+                raise ErreurExcel(chemin, erreur, self._etat.trace[-5:], self._etat.definitions) from erreur
             raise
         return self._envelopper(valeur, chemin)
 
@@ -285,7 +320,11 @@ class TraceurCOM:
             instruction,
             lambda: self._objet(*_deballer(args), **{k: _deballer(v) for k, v in kwargs.items()}),
         )
-        return self._envelopper(resultat, instruction)
+        if isinstance(resultat, _VALEURS_SIMPLES):
+            return resultat
+        nom = self._etat.nommer(instruction, self._chemin)
+        self._etat.trace[-1] = f"{nom} = {instruction}"
+        return TraceurCOM(resultat, nom, self._etat)
 
     def __iter__(self):
         for i, element in enumerate(self._objet):

@@ -96,6 +96,10 @@ sortie/
   Bash sous Windows.
 - Les réglages de la machine (`~/.claude`, CLAUDE.md, skills) ne sont pas chargés.
 - Limites par projet : nombre de tours (`--max-tours`) et budget en dollars (`--budget`).
+  Avant chaque traduction, vba2py compte les lignes de VBA et prévient si le budget paraît
+  insuffisant pour le modèle choisi (estimation grossière : environ 1 $ + 1,5 $ par millier de
+  lignes avec Sonnet, le double avec Opus) ; un agent à court de budget s'arrête avant d'avoir
+  corrigé ses tests.
 - Limite assumée : `pytest` exécute le code écrit par l'agent. Pour des classeurs d'origine
   inconnue, lancez l'outil dans un conteneur.
 

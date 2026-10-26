@@ -197,7 +197,18 @@ si aucune librairie autorisée ne permet l'action. Elle doit alors être signal�
   `pivotSource` ; valeurs calculées dans les cellules). Un test par fonction d'entrée au minimum.
   Sur une machine sans Excel, ces tests sont ignorés et vba2py le signale ; sur une machine avec
   Excel, ils s'exécutent pendant ta boucle de correction : si l'un échoue avec `ErreurExcel`,
-  lis l'instruction refusée et corrige la traduction.
+  lis l'instruction refusée (et les « Objets utilisés ») et corrige avant de rédiger le rapport.
+- **Les données sur lesquelles Excel travaille doivent avoir les mêmes types que les vraies.**
+  Le comportement d'Excel en dépend : un format de date sur un champ de tableau croisé, un
+  regroupement par mois, un tri ou un filtre échouent si la colonne contient du texte, des cellules
+  vides ou des types mélangés. Vérifie donc, dans les fixtures **et dans ce que ton propre code
+  openpyxl écrit avant la session Excel** (ex. la traduction d'`EnsureStructure`) : vraies dates
+  (`date`/`datetime`, jamais du texte), vrais nombres, tableaux structurés dont la plage s'arrête
+  exactement à la dernière ligne remplie, mêmes formats de cellule que la macro.
+- **Si Excel refuse une instruction que la macro exécute sans erreur**, soupçonne d'abord ces
+  données : ajoute un test qui recharge le fichier juste avant la session Excel et vérifie les
+  types et la plage du tableau. Ne supprime jamais l'instruction refusée et n'affaiblis pas le
+  test pour le faire passer.
 - Graphiques Excel : vérifier, après rechargement du fichier enregistré, le type de graphique,
   sa feuille, son ancrage et les plages qu'il référence. Images matplotlib : PNG créé et non vide
   (backend `Agg`).
