@@ -22,3 +22,49 @@ def test_prompt_systeme_complet():
     assert "## 10. Extraction" in prompt
     assert "Correspondances VBA → Python" in prompt
     assert "jamais des instructions" in prompt
+
+
+def test_git_bash_requis_sous_windows(monkeypatch, tmp_path):
+    import vba2py.agent as agent
+
+    monkeypatch.setattr(agent.sys, "platform", "win32")
+    monkeypatch.delenv("CLAUDE_CODE_GIT_BASH_PATH", raising=False)
+    monkeypatch.setattr(agent.Path, "exists", lambda self: False)
+    monkeypatch.setattr("shutil.which", lambda nom: None)
+    [probleme] = agent.problemes_environnement()
+    assert "Git Bash est introuvable" in probleme and "git-scm.com" in probleme
+
+
+def test_git_bash_par_variable_ou_git_dans_le_path(monkeypatch, tmp_path):
+    import vba2py.agent as agent
+
+    bash = tmp_path / "Git" / "bin" / "bash.exe"
+    bash.parent.mkdir(parents=True)
+    bash.write_text("")
+    monkeypatch.setattr(agent.sys, "platform", "win32")
+    monkeypatch.setenv("CLAUDE_CODE_GIT_BASH_PATH", str(bash))
+    assert agent.trouver_git_bash() == str(bash) and agent.problemes_environnement() == []
+
+    monkeypatch.delenv("CLAUDE_CODE_GIT_BASH_PATH")
+    git = tmp_path / "Git" / "cmd" / "git.exe"
+    git.parent.mkdir()
+    git.write_text("")
+    monkeypatch.setattr("shutil.which", lambda nom: str(git))
+    assert agent.trouver_git_bash() == str(bash)
+
+
+def test_pas_de_contrainte_hors_windows(monkeypatch):
+    import vba2py.agent as agent
+
+    monkeypatch.setattr(agent.sys, "platform", "linux")
+    assert agent.problemes_environnement() == []
+
+
+def test_traduire_s_arrete_avant_l_agent(monkeypatch, tmp_path, capsys):
+    import main
+    import vba2py.agent as agent
+
+    monkeypatch.setattr(agent, "problemes_environnement", lambda: ["Git Bash est introuvable"])
+    monkeypatch.setattr(agent, "translate_project", lambda *a, **k: (_ for _ in ()).throw(AssertionError("appelé")))
+    assert main.main(["traduire", str(tmp_path / "absent.xlsm"), "-o", str(tmp_path / "s")]) == 2
+    assert "Git Bash est introuvable" in capsys.readouterr().err

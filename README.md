@@ -11,6 +11,11 @@ source .venv/bin/activate          # Windows : .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
+**Windows : Git pour Windows est obligatoire** (https://git-scm.com/download/win). L'agent
+s'appuie sur Git Bash pour lancer Python et pytest ; sans lui, `traduire` s'arrête avec un message
+explicatif. Si Git est installé à un emplacement inhabituel :
+`setx CLAUDE_CODE_GIT_BASH_PATH "C:\chemin\vers\Git\bin\bash.exe"`.
+
 Clé API (créée sur console.anthropic.com) :
 
 ```bash
