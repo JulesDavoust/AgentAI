@@ -1,6 +1,7 @@
 """Outils d'exécution de l'agent : exécutés par vba2py lui-même, sans terminal."""
 
 import asyncio
+from pathlib import Path
 import sys
 
 import pytest
@@ -70,3 +71,45 @@ def test_outils_refusent_puis_executent(projet):
 def test_serveur_mcp_cree(projet):
     serveur = creer_serveur(projet, Guardrails(projet))
     assert serveur["name"] == "vba2py" and serveur["type"] == "sdk"
+
+
+def test_outil_reference_seulement_sur_demande(projet):
+    assert "executer_macro_vba" not in [t.name for t in creer_outils(projet, Guardrails(projet))]
+    assert "executer_macro_vba" in [t.name for t in creer_outils(projet, Guardrails(projet), reference_vba=True)]
+
+
+@pytest.fixture
+def projet_vba(projet):
+    (projet / "_source_vba" / "Module1.bas").write_text(
+        'Attribute VB_Name = "Module1"\nPublic Sub Lancer()\nEnd Sub\nPrivate Sub Interne()\nEnd Sub\n', encoding="utf-8")
+    (projet / "tests" / "fixtures").mkdir()
+    (projet / "tests" / "fixtures" / "classeur.xlsx").write_bytes(b"PK")
+    return projet
+
+
+def test_garde_fous_de_la_reference(projet_vba):
+    g = Guardrails(projet_vba)
+    ok = {"macro": "Module1.Lancer", "fixture": "tests/fixtures/classeur.xlsx", "nom": "lancer"}
+    outil = "mcp__vba2py__executer_macro_vba"
+    assert g.check(outil, ok)[0]
+    for modif in ({"macro": "Module1.Interne"}, {"macro": "Lancer"}, {"fixture": "../ailleurs.xlsx"},
+                  {"fixture": "tests/fixtures/absent.xlsx"}, {"fixture": "tests/test_a.py"},
+                  {"nom": "../evasion"}, {"nom": "Majuscules"}):
+        assert not g.check(outil, {**ok, **modif})[0], modif
+
+
+def test_macro_de_reference(projet_vba):
+    from vba2py.outils import macro_de_reference
+
+    def faux_lanceur(parametres, delai):
+        Path(parametres["journal"]).write_bytes(b"DEBUT\tModule1.Lancer\nFIN\tmacro terminee\n")
+        return "OK"
+
+    code, texte = macro_de_reference(projet_vba, "Module1.Lancer", "tests/fixtures/classeur.xlsx", [], "lancer",
+                                     lanceur=faux_lanceur)
+    assert code == 0 and "Statut : OK" in texte and "tests/references/lancer/" in texte
+    assert (projet_vba / "tests" / "references" / "lancer" / "resultat.json").exists()
+
+    code, texte = macro_de_reference(projet_vba, "Module1.Lancer", "tests/fixtures/classeur.xlsx", [], "lancer",
+                                     lanceur=lambda p, d: "ECHEC délai dépassé (300 s)")
+    assert code == 1 and "ECHEC délai dépassé" in texte

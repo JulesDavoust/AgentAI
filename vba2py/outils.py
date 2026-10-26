@@ -17,7 +17,7 @@ from typing import Annotated
 
 from claude_agent_sdk import create_sdk_mcp_server, tool
 
-from .guardrails import OUTIL_SCRIPT, OUTIL_SYNTAXE, OUTIL_TESTS, Guardrails
+from .guardrails import OUTIL_REFERENCE, OUTIL_SCRIPT, OUTIL_SYNTAXE, OUTIL_TESTS, Guardrails
 
 NOM_SERVEUR = "vba2py"
 NOMS_OUTILS = [OUTIL_TESTS, OUTIL_SYNTAXE, OUTIL_SCRIPT]
@@ -88,12 +88,38 @@ def _refus(raison: str) -> dict:
     return {"content": [{"type": "text", "text": f"Refusé par les garde-fous : {raison}"}], "is_error": True}
 
 
-def creer_serveur(project_dir: Path, guardrails: Guardrails):
-    """Serveur MCP interne exposant les trois outils, liés au dossier du projet."""
-    return create_sdk_mcp_server(name=NOM_SERVEUR, tools=creer_outils(project_dir, guardrails))
+DOSSIER_REFERENCES = "tests/references"
 
 
-def creer_outils(project_dir: Path, guardrails: Guardrails) -> list:
+def creer_serveur(project_dir: Path, guardrails: Guardrails, reference_vba: bool = False):
+    """Serveur MCP interne exposant les outils, liés au dossier du projet."""
+    return create_sdk_mcp_server(name=NOM_SERVEUR, tools=creer_outils(project_dir, guardrails, reference_vba))
+
+
+def noms_outils(reference_vba: bool = False) -> list[str]:
+    return NOMS_OUTILS + ([OUTIL_REFERENCE] if reference_vba else [])
+
+
+def macro_de_reference(project_dir: Path, macro: str, fixture: str, reponses: list[str], nom: str, lanceur=None) -> tuple[int, str]:
+    """Exécute la macro d'origine (neutralisée) sur une copie de `fixture` ; résultat dans tests/references/<nom>/."""
+    from .livrable import macros_lancables
+    from .reference_vba import executer
+
+    try:
+        resultat = executer(project_dir, macro, fixture, reponses, project_dir / DOSSIER_REFERENCES / nom,
+                            macros_lancables(project_dir), lanceur=lanceur)
+    except ValueError as exc:
+        return 1, str(exc)
+    relatif = resultat.dossier.relative_to(project_dir).as_posix()
+    texte = [f"Statut : {resultat.statut}", f"Référence enregistrée dans {relatif}/ :",
+             "- classeur_apres.xlsm : le classeur fictif après exécution de la macro d'origine",
+             "- fichiers_ecrits/ : fichiers écrits par la macro (chemins absolus redirigés)",
+             "- journal.txt : neutralisations, MsgBox/InputBox (texte et réponse), appels neutralisés, erreur éventuelle",
+             "", "Journal d'exécution :"] + resultat.journal[-60:]
+    return (0 if resultat.statut == "OK" or resultat.statut.startswith("ERREUR") else 1), "\n".join(texte)
+
+
+def creer_outils(project_dir: Path, guardrails: Guardrails, reference_vba: bool = False) -> list:
 
     def controler(nom_outil: str, args: dict) -> str | None:
         ok, raison = guardrails.check(nom_outil, args)
@@ -151,4 +177,33 @@ def creer_outils(project_dir: Path, guardrails: Guardrails) -> list:
             return _refus(refus)
         return _reponse(*executer_script(project_dir, args["script"], args.get("arguments")))
 
-    return [outil_tests, outil_syntaxe, outil_script]
+    outils = [outil_tests, outil_syntaxe, outil_script]
+    if not reference_vba:
+        return outils
+
+    @tool(
+        "executer_macro_vba",
+        "Exécute la macro VBA **d'origine** sur une copie d'un classeur fictif du projet, dans un Excel "
+        "isolé et sans effet réel (dialogues, mails, ouverture de fichiers neutralisés ; chemins absolus "
+        "redirigés), et enregistre le résultat comme référence dans tests/references/<nom>/. "
+        "Sert à comparer la traduction à la macro réelle sur les mêmes données.",
+        {
+            "type": "object",
+            "properties": {
+                "macro": {"type": "string", "description": "Macro lançable, sous la forme Module.Macro"},
+                "fixture": {"type": "string", "description": "Classeur fictif (.xlsx/.xlsm) relatif au projet, ex. tests/fixtures/x.xlsx"},
+                "reponses": {"type": "array", "items": {"type": "string"},
+                             "description": "Réponses, dans l'ordre, aux InputBox et aux MsgBox à choix (oui/non/annuler/ok…)"},
+                "nom": {"type": "string", "description": "Nom de la référence (lettres minuscules, chiffres, _ ou -)"},
+            },
+            "required": ["macro", "fixture", "nom"],
+        },
+    )
+    async def outil_reference(args):
+        refus = controler(OUTIL_REFERENCE, args)
+        if refus:
+            return _refus(refus)
+        return _reponse(*macro_de_reference(project_dir, args["macro"], args["fixture"],
+                                            [str(r) for r in args.get("reponses") or []], args["nom"]))
+
+    return outils + [outil_reference]

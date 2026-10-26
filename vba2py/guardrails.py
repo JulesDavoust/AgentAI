@@ -46,6 +46,7 @@ _FORBIDDEN_CODE = [
 OUTIL_TESTS = "mcp__vba2py__lancer_tests"
 OUTIL_SYNTAXE = "mcp__vba2py__verifier_syntaxe"
 OUTIL_SCRIPT = "mcp__vba2py__executer_script"
+OUTIL_REFERENCE = "mcp__vba2py__executer_macro_vba"
 
 # Modules autorisés uniquement dans connecteurs/ (intégrations Office fidèles au VBA)
 CONNECTOR_DIRNAME = "connecteurs"
@@ -75,6 +76,7 @@ class Guardrails:
             OUTIL_TESTS: self._check_tests,
             OUTIL_SYNTAXE: self._check_syntaxe,
             OUTIL_SCRIPT: self._check_script,
+            OUTIL_REFERENCE: self._check_reference,
         }.get(tool_name)
         if handler is None:
             return False, f"outil « {tool_name} » non autorisé pour cet agent"
@@ -169,6 +171,24 @@ class Guardrails:
             if (Path(argument).is_absolute() or ".." in Path(argument).parts) and not self._inside(argument, self.project_dir):
                 return False, f"argument pointant hors du projet refusé : {argument}"
         return True, "script du projet"
+
+    def _check_reference(self, tool_input: dict) -> tuple[bool, str]:
+        from .livrable import macros_lancables
+
+        macro = str(tool_input.get("macro") or "")
+        if macro not in macros_lancables(self.project_dir):
+            return False, f"macro inconnue ou non lançable (forme attendue : Module.Macro) : {macro}"
+        fixture = str(tool_input.get("fixture") or "")
+        if Path(fixture).suffix.lower() not in {".xlsx", ".xlsm"}:
+            return False, f"la fixture doit être un classeur .xlsx ou .xlsm : {fixture}"
+        ok, raison = self._check_paths([fixture], "fixture")
+        if not ok:
+            return ok, raison
+        if self._inside(fixture, self.source_dir) or not (self.project_dir / fixture).exists():
+            return False, f"fixture introuvable ou dans _source_vba/ : {fixture}"
+        if not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,60}", str(tool_input.get("nom") or "")):
+            return False, "nom de référence invalide (minuscules, chiffres, _ ou -)"
+        return True, "référence VBA sur une fixture du projet"
 
     def _check_paths(self, paths: list[str], label: str) -> tuple[bool, str]:
         for p in paths:

@@ -84,6 +84,8 @@ sortie/
 
 - Le VBA est traité comme une donnée : l'agent a pour consigne de ne jamais suivre
   d'instructions trouvées dans le code ou ses commentaires.
+- Le VBA n'est **jamais exécuté**, sauf avec l'option `--reference-vba` (voir plus bas), et alors
+  seulement sur des classeurs fictifs, neutralisé, dans un Excel isolé.
 - Chaque action de l'agent est contrôlée par du code (`vba2py/guardrails.py`) avant exécution :
   lecture et écriture limitées au dossier du projet, `_source_vba/` en lecture seule,
   pas d'accès web, imports dangereux refusés dans le code écrit (réseau, sous-processus,
@@ -158,3 +160,28 @@ Excel a refusé : wb.PivotCaches().Create(SourceType=1, SourceData='tblDonnees')
   Excel a refusé l'opération (0x800A03EC) : nom de feuille, de tableau ou de champ introuvable, ...
   Instructions précédentes : ...
 ```
+
+## Comparaison avec la macro d'origine (`--reference-vba`, Windows + Excel)
+
+```powershell
+python main.py traduire examples\macros_natran_vf_vba -o sortie --reference-vba
+```
+
+Avec cette option, l'agent dispose d'un outil `executer_macro_vba` : vba2py exécute **la macro
+d'origine** sur une copie d'un classeur fictif du projet, et enregistre le résultat comme
+référence (`tests/references/<nom>/`). L'agent écrit `tests/test_reference_vba.py`, qui compare
+sa traduction à ce que fait réellement la macro sur les mêmes données.
+
+L'exécution est sans effet réel :
+- instance d'Excel séparée et invisible, arrêtée au bout de 5 minutes si la macro bloque ;
+- `MsgBox` / `InputBox` sans fenêtre : texte noté dans le journal, réponses fournies à l'avance ;
+- Outlook, Word, PowerPoint, Access : `CreateObject` / `GetObject` lèvent une erreur (aucun mail),
+  la macro suit sa propre gestion d'erreur ;
+- `FollowHyperlink`, `Shell`, `SendKeys` : rien n'est ouvert ni exécuté ;
+- chemins absolus écrits dans le code (`C:\...`, `\\serveur\...`) : redirigés vers un bac à sable,
+  dont le contenu est recopié dans la référence ;
+- seule une copie du code est modifiée et importée dans la copie du classeur fictif.
+
+Prérequis : l'option Excel « Accès approuvé au modèle d'objet du projet VBA » (déjà nécessaire
+pour `tools/ExportVBA.bas`). Limites : projets avec UserForms non pris en charge ; le code des
+modules `ThisWorkbook` et des feuilles (événements) n'est pas importé.

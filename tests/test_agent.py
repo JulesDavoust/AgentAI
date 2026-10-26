@@ -9,6 +9,9 @@ def test_options_de_l_agent(tmp_path):
     assert "Bash" not in options.tools and {"Bash", "PowerShell", "WebFetch"} <= set(options.disallowed_tools)
     assert list(options.mcp_servers) == ["vba2py"]
     assert "mcp__vba2py__lancer_tests" in options.allowed_tools
+    assert "mcp__vba2py__executer_macro_vba" not in options.allowed_tools
+    avec_reference = build_options(tmp_path, None, reference_vba=True)
+    assert "mcp__vba2py__executer_macro_vba" in avec_reference.allowed_tools
     assert options.permission_mode == "dontAsk"
     assert options.setting_sources == []
     assert options.cwd == str(tmp_path)

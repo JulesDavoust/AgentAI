@@ -16,7 +16,7 @@ from claude_agent_sdk import (
 )
 
 from .guardrails import Guardrails
-from .outils import NOM_SERVEUR, NOMS_OUTILS, creer_serveur
+from .outils import NOM_SERVEUR, creer_serveur, noms_outils
 
 PROMPTS_DIR = Path(__file__).resolve().parent.parent / "prompts"
 
@@ -74,16 +74,17 @@ def build_options(
     model: str = DEFAULT_MODEL,
     max_turns: int = 60,
     max_budget_usd: float | None = 5.0,
+    reference_vba: bool = False,
 ) -> ClaudeAgentOptions:
     guardrails = Guardrails(project_dir, journal_path)
     return ClaudeAgentOptions(
         # Outils intégrés disponibles : ni terminal, ni web, ni notebooks, ni sous-agents.
         tools=AGENT_TOOLS,
         # Outils d'exécution de vba2py (tests, syntaxe, script), exécutés par vba2py lui-même.
-        mcp_servers={NOM_SERVEUR: creer_serveur(project_dir, guardrails)},
+        mcp_servers={NOM_SERVEUR: creer_serveur(project_dir, guardrails, reference_vba)},
         strict_mcp_config=True,
         # Auto-approuvés, mais chaque appel passe d'abord par le hook des garde-fous.
-        allowed_tools=AGENT_TOOLS + NOMS_OUTILS,
+        allowed_tools=AGENT_TOOLS + noms_outils(reference_vba),
         disallowed_tools=["Bash", "PowerShell", "WebFetch", "WebSearch", "NotebookEdit", "Agent", "Task"],
         # Tout ce qui n'est pas pré-approuvé est refusé, sans jamais demander.
         permission_mode="dontAsk",
@@ -101,8 +102,12 @@ def build_options(
 
 async def translate_project(project_dir: Path, journal_path: Path | None, verbose: bool = True, **kwargs) -> AgentRun:
     options = build_options(project_dir, journal_path, **kwargs)
+    prompt = USER_PROMPT
+    if kwargs.get("reference_vba"):
+        prompt += (" L'outil `executer_macro_vba` est disponible : utilise-le pour comparer ta traduction "
+                   "à la macro d'origine (voir « Comparaison avec la macro d'origine »).")
     run = AgentRun(success=False)
-    async for message in query(prompt=USER_PROMPT, options=options):
+    async for message in query(prompt=prompt, options=options):
         if isinstance(message, AssistantMessage) and verbose:
             for block in message.content:
                 if isinstance(block, ToolUseBlock):
@@ -124,7 +129,7 @@ async def translate_project(project_dir: Path, journal_path: Path | None, verbos
 
 
 def _describe(tool_input: dict) -> str:
-    for key in ("file_path", "pattern", "script", "cibles", "fichiers"):
+    for key in ("file_path", "pattern", "script", "macro", "cibles", "fichiers"):
         if key in tool_input:
             return str(tool_input[key])[:120]
     return ""

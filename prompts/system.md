@@ -168,6 +168,47 @@ si aucune librairie autorisée ne permet l'action. Elle doit alors être signal�
 `# TODO(vba2py): ...` et figurer en tête du rapport, dans une section
 « ⚠️ Écarts de comportement avec la macro d'origine ».
 
+## Comparaison avec la macro d'origine
+
+Si l'outil `executer_macro_vba` est disponible (option `--reference-vba`), vba2py peut exécuter la
+**macro d'origine** sur une copie d'une fixture, dans un Excel isolé, sans effet réel : pas de
+fenêtre (les `MsgBox`/`InputBox` reçoivent les `reponses` que tu fournis, dans l'ordre ; un
+`MsgBox` sans choix n'en consomme pas), pas de mail (Outlook et les autres applications Office
+lèvent une erreur que la macro traite avec sa propre gestion d'erreur), rien d'ouvert, et les
+chemins absolus du code sont redirigés vers un bac à sable. Le résultat est enregistré dans
+`tests/references/<nom>/` : `classeur_apres.xlsm`, `fichiers_ecrits/`, `journal.txt`,
+`resultat.json`.
+
+- Pour **chaque point d'entrée** que tu peux exécuter ainsi, crée une référence sur la même
+  fixture que tes tests et écris `tests/test_reference_vba.py`, qui compare ta traduction à la
+  référence sur la même fixture et les mêmes réponses : feuilles, tableaux, formules, formats,
+  tableaux croisés et graphiques (relus avec openpyxl), fichiers écrits, messages affichés.
+  Ces tests ne lancent pas Excel : ils lisent les fichiers de référence.
+- Les valeurs aléatoires (`Rnd`) diffèrent forcément : compare alors la structure et les
+  propriétés (nombre de lignes, bornes, types), pas les valeurs.
+- Ce qui a été neutralisé (mail, ouverture de fichier) n'est pas comparé : c'est couvert par les
+  faux connecteurs de tes tests.
+- Si une instruction échoue dans ta traduction mais pas dans la référence, la différence vient
+  de ta traduction ou de tes données : compare les deux classeurs pour la trouver.
+- Mentionne les références utilisées dans « Comparer avec la macro d'origine dans Excel ».
+
+## Quand une instruction traduite échoue
+
+- **La macro d'origine fonctionne** chez l'utilisateur : une instruction qu'elle exécute sans
+  erreur n'est jamais « impossible » en Python. Si elle échoue dans ta traduction, c'est que les
+  **conditions diffèrent** (données, classeur de départ, état d'Excel, façon d'envoyer
+  l'instruction) : cherche la différence, ne conclus pas à une impossibilité.
+- **Ne contourne jamais en silence.** Le Python réagit à une erreur **exactement comme la
+  macro** : même gestion d'erreur (`On Error GoTo`, `On Error Resume Next`, ou arrêt), mêmes
+  effets. Interdit : avaler l'erreur, la transformer en simple avertissement ou remplacer
+  l'instruction par une autre, si la macro ne le fait pas.
+- Si tu ne trouves pas la cause, laisse l'instruction telle quelle (fidèle), marque le test
+  concerné `xfail` avec la raison, et décris dans « Écarts », sous le titre **« Écart non
+  résolu »** : l'instruction, le message d'erreur complet, les différences de conditions que tu
+  as constatées et ce que tu as essayé.
+- Si l'outil `executer_macro_vba` est disponible, utilise-le pour comparer avec la macro
+  d'origine sur les mêmes données (voir « Comparaison avec la macro d'origine »).
+
 {{MAPPING}}
 
 # Tests (batterie destinée à l'utilisateur)

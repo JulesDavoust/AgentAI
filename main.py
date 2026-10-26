@@ -47,6 +47,14 @@ def cmd_extraire(args) -> list[tuple[Path, Path]]:
 def cmd_traduire(args) -> int:
     from vba2py.agent import estimer_budget, lignes_de_vba, translate_project
 
+    reference_vba = args.reference_vba
+    if reference_vba:
+        from vba2py.bibliotheque.excel_com import excel_disponible
+
+        if not excel_disponible():
+            print("⚠️  --reference-vba ignoré : Excel n'est pas disponible sur cette machine (Windows + Excel requis).")
+            reference_vba = False
+
     projects = cmd_extraire(args)
     journals = Path(args.sortie).resolve() / "_journaux"
     status = 0
@@ -73,6 +81,7 @@ def cmd_traduire(args) -> int:
                 model=args.modele,
                 max_turns=args.max_tours,
                 max_budget_usd=args.budget,
+                reference_vba=reference_vba,
             )
         )
         cost = f"{run.cost_usd:.2f} $" if run.cost_usd is not None else "inconnu"
@@ -121,6 +130,11 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--modele", default="claude-opus-5-5", help="ex. claude-opus-5-5, claude-sonnet-5-5")
     p.add_argument("--max-tours", type=int, default=60)
     p.add_argument("--budget", type=float, default=5.0, help="budget maximum en dollars par projet")
+    p.add_argument(
+        "--reference-vba", action="store_true",
+        help="autorise l'agent à exécuter les macros d'origine (neutralisées : ni mail, ni dialogue, ni "
+             "fichier hors bac à sable) sur des classeurs fictifs, pour comparer sa traduction. Windows + Excel",
+    )
 
     p = sub.add_parser("comparer", help="comparer un export manuel avec l'extraction automatique")
     p.add_argument("export", help="dossier des modules exportés depuis l'éditeur VBA")
