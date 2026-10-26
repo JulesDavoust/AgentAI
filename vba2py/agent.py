@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -68,14 +69,25 @@ def build_system_prompt() -> str:
     return system.replace("{{MAPPING}}", mapping).replace("{{RAPPORT_MODELE}}", "```markdown\n" + rapport + "```")
 
 
+def ecrire_prompt_systeme(dossier: Path) -> Path:
+    """Instructions de l'agent dans un fichier : passées en argument, elles dépassent la limite de
+    longueur d'une ligne de commande Windows (32 767 caractères, erreur WinError 206)."""
+    fichier = dossier / "instructions_agent.md"
+    fichier.write_text(build_system_prompt(), encoding="utf-8")
+    return fichier
+
+
 def build_options(
     project_dir: Path,
     journal_path: Path | None,
     model: str = DEFAULT_MODEL,
     max_turns: int = 60,
     max_budget_usd: float | None = 5.0,
+    fichier_prompt: Path | None = None,
 ) -> ClaudeAgentOptions:
     guardrails = Guardrails(project_dir, journal_path)
+    if fichier_prompt is None:
+        fichier_prompt = ecrire_prompt_systeme(Path(tempfile.mkdtemp(prefix="vba2py_")))
     return ClaudeAgentOptions(
         # Outils intégrés disponibles : ni terminal, ni web, ni notebooks, ni sous-agents.
         tools=AGENT_TOOLS,
@@ -91,7 +103,8 @@ def build_options(
         # Isolation : aucun réglage, CLAUDE.md ou skill de la machine n'est chargé.
         setting_sources=[],
         skills=[],
-        system_prompt={"type": "preset", "preset": "claude_code", "append": build_system_prompt()},
+        system_prompt={"type": "preset", "preset": "claude_code"},
+        extra_args={"append-system-prompt-file": str(fichier_prompt)},
         cwd=str(project_dir),
         model=model,
         max_turns=max_turns,
@@ -100,7 +113,12 @@ def build_options(
 
 
 async def translate_project(project_dir: Path, journal_path: Path | None, verbose: bool = True, **kwargs) -> AgentRun:
-    options = build_options(project_dir, journal_path, **kwargs)
+    with tempfile.TemporaryDirectory(prefix="vba2py_") as dossier:
+        options = build_options(project_dir, journal_path, fichier_prompt=ecrire_prompt_systeme(Path(dossier)), **kwargs)
+        return await _executer_agent(options, verbose)
+
+
+async def _executer_agent(options: ClaudeAgentOptions, verbose: bool) -> AgentRun:
     run = AgentRun(success=False)
     async for message in query(prompt=USER_PROMPT, options=options):
         if isinstance(message, AssistantMessage) and verbose:

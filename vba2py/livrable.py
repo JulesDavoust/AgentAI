@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 import sys
@@ -22,6 +23,14 @@ PROMPTS_DIR = Path(__file__).resolve().parent.parent / "prompts"
 INTERFACE_FILENAME = "interface.json"
 PREVIOUS_INTERFACE_FILENAME = "interface_precedente.json"
 REPORT_FILENAME = "RAPPORT.md"
+
+
+def _executer(commande: list[str], dossier: Path, timeout: int | None = None) -> subprocess.CompletedProcess:
+    """Sous-processus Python en UTF-8 des deux côtés : sous Windows, l'encodage par défaut (cp1252)
+    ne sait pas représenter certains caractères des sorties de pytest (→, ✓...)."""
+    env = dict(os.environ, PYTHONUTF8="1", PYTHONIOENCODING="utf-8", MPLBACKEND="Agg")
+    return subprocess.run(commande, cwd=dossier, capture_output=True, text=True, encoding="utf-8",
+                          errors="replace", timeout=timeout, env=env)
 
 
 @dataclass
@@ -127,7 +136,7 @@ def noms_arguments(point: dict) -> list[str]:
 def aide_du_script(project_dir: Path, script: str, sous_commande: str | None = None) -> str | None:
     """Sortie de `python script [sous_commande] --help` (None si la commande échoue)."""
     commande = [sys.executable, script] + ([sous_commande] if sous_commande else []) + ["--help"]
-    result = subprocess.run(commande, cwd=project_dir, capture_output=True, text=True, timeout=60)
+    result = _executer(commande, project_dir, timeout=60)
     return result.stdout if result.returncode == 0 else None
 
 
@@ -308,10 +317,7 @@ def verifier_excel_reel(project_dir: Path, verif: Verification) -> None:
 
     Sans Excel (Linux, poste sans Office), ces tests sont ignorés : simple avertissement.
     """
-    result = subprocess.run(
-        [sys.executable, "-m", "pytest", "-q", "-m", MARQUEUR_EXCEL, "-rs", "tests"],
-        cwd=project_dir, capture_output=True, text=True,
-    )
+    result = _executer([sys.executable, "-m", "pytest", "-q", "-m", MARQUEUR_EXCEL, "-rs", "tests"], project_dir)
     derniere = (result.stdout.strip().splitlines() or [""])[-1]
     if result.returncode == 5:  # aucun test sélectionné
         verif.erreurs.append(
@@ -354,9 +360,7 @@ def verifier_projet(project_dir: Path, interface_precedente: Path | None = None)
             verif.erreurs.append(f"interface.json invalide : {exc}")
 
     if (project_dir / "tests").exists():
-        result = subprocess.run(
-            [sys.executable, "-m", "pytest", "-q", "tests"], cwd=project_dir, capture_output=True, text=True
-        )
+        result = _executer([sys.executable, "-m", "pytest", "-q", "tests"], project_dir)
         derniere = (result.stdout.strip().splitlines() or [""])[-1]
         verif.resultat_tests = derniere
         if result.returncode != 0:

@@ -40,6 +40,7 @@ dans Excel.
 from __future__ import annotations
 
 import datetime
+import decimal
 import re
 import sys
 from contextlib import contextmanager
@@ -252,7 +253,9 @@ def _formater(valeur) -> str:
     return repr(valeur)
 
 
-_VALEURS_SIMPLES = (str, bytes, int, float, bool, type(None), tuple, list, dict, datetime.date, datetime.time)
+# decimal.Decimal : valeurs de type Currency renvoyées par Excel
+_VALEURS_SIMPLES = (str, bytes, int, float, bool, type(None), tuple, list, dict, datetime.date, datetime.time,
+                    decimal.Decimal)
 
 
 class _Etat:

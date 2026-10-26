@@ -60,3 +60,20 @@ def test_traduire_previent_si_budget_insuffisant(monkeypatch, tmp_path, capsys):
     sortie = capsys.readouterr().out
     assert "Budget probablement insuffisant : environ 9.00 $ conseillés" in sortie
     assert "--budget 9 ou plus" in sortie
+
+
+def test_ligne_de_commande_sous_la_limite_windows(tmp_path):
+    """Régression : passées en argument, les instructions dépassaient 32 767 caractères (WinError 206)."""
+    from claude_agent_sdk._internal.transport.subprocess_cli import SubprocessCLITransport
+
+    from vba2py.agent import build_system_prompt, ecrire_prompt_systeme
+
+    fichier = ecrire_prompt_systeme(tmp_path)
+    assert fichier.read_text(encoding="utf-8") == build_system_prompt()
+    options = build_options(tmp_path, None, fichier_prompt=fichier)
+    assert "append" not in options.system_prompt
+    transport = SubprocessCLITransport(prompt="x", options=options)
+    transport._cli_path = "claude"
+    commande = transport._build_command()
+    assert commande[commande.index("--append-system-prompt-file") + 1] == str(fichier)
+    assert len(" ".join(commande)) < 8_000  # très loin de la limite, même si les instructions grossissent
