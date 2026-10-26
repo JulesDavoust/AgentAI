@@ -39,96 +39,220 @@ class Verification:
 # --------------------------------------------------------------------------- interface
 
 
+def nom_sous_commande(procedure: str) -> str:
+    """Nom de sous-commande déduit du nom VBA : « Demo_EcrireEtLire » → « demo-ecrire-et-lire »."""
+    return "-".join(_mots(procedure.split(".")[-1]))
+
+
+def nom_script(module: str) -> str:
+    """Nom du fichier Python d'un module VBA : « CréationCSV » → « creation_csv.py »."""
+    return "_".join(_mots(module)) + ".py"
+
+
+def _mots(nom: str) -> list[str]:
+    import unicodedata
+
+    ascii_nom = unicodedata.normalize("NFKD", nom).encode("ascii", "ignore").decode()
+    mots = []
+    for partie in re.split(r"[^0-9A-Za-z]+", ascii_nom):
+        mots += re.split(r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])", partie)
+    return [m.lower() for m in mots if m]
+
+
+_SUB_LANCABLE = re.compile(r"^[ \t]*(?:Public[ \t]+)?Sub[ \t]+(\w+)[ \t]*\([ \t]*\)", re.MULTILINE | re.IGNORECASE)
+
+
+def macros_lancables(project_dir: Path) -> list[str]:
+    """« Module.Macro » pour chaque Sub publique sans paramètre d'un module standard (.bas).
+
+    Ce sont les macros qu'Excel propose dans Alt+F8 : chacune doit devenir un point d'entrée ou
+    être déclarée comme procédure interne dans interface.json.
+    """
+    resultat = []
+    for fichier in sorted((project_dir / SOURCE_DIRNAME).glob("*.bas")):
+        code = fichier.read_text(encoding="utf-8")
+        nom = re.search(r'^Attribute VB_Name = "([^"]+)"', code, re.MULTILINE)
+        module = nom.group(1) if nom else fichier.stem
+        if re.search(r"^\s*Option\s+Private\s+Module", code, re.MULTILINE | re.IGNORECASE):
+            continue  # module privé : ses macros n'apparaissent pas dans Alt+F8
+        resultat += [f"{module}.{m}" for m in _SUB_LANCABLE.findall(code)]
+    return resultat
+
+
+def macros_boutons(project_dir: Path) -> list[str]:
+    structure = project_dir / SOURCE_DIRNAME / "structure_classeur.json"
+    if not structure.exists():
+        return []
+    return [b["macro"] for b in json.loads(structure.read_text(encoding="utf-8")).get("boutons", [])]
+
+
+def _meme_macro(a: str, b: str) -> bool:
+    """« Module.Macro » et « Macro » désignent la même macro (comparaison insensible à la casse, comme VBA)."""
+    a, b = a.lower(), b.lower()
+    return a == b or a.split(".")[-1] == b.split(".")[-1] and ("." not in a or "." not in b)
+
+
 def charger_interface(path: Path) -> dict:
     data = json.loads(path.read_text(encoding="utf-8"))
-    for cle in ("script", "fixture_principale", "arguments"):
-        if cle not in data:
-            raise ValueError(f"{path.name} : clé « {cle} » manquante")
-    for arg in data["arguments"]:
-        if "nom" not in arg or "remplace" not in arg:
-            raise ValueError(f"{path.name} : chaque argument doit avoir « nom » et « remplace »")
+    if "points_entree" not in data and "script" in data:  # ancien format : un seul script
+        data = {
+            "points_entree": [{
+                "script": data["script"],
+                "sous_commande": None,
+                "procedure": data.get("procedure_principale", ""),
+                "justification": "contrat converti depuis l'ancien format",
+                "fixture": data.get("fixture_principale"),
+                "arguments": data.get("arguments", []),
+            }],
+            "procedures_internes": [],
+        }
+    if not isinstance(data.get("points_entree"), list) or not data["points_entree"]:
+        raise ValueError(f"{path.name} : « points_entree » doit être une liste non vide")
+    for point in data["points_entree"]:
+        for cle in ("script", "procedure", "arguments"):
+            if cle not in point:
+                raise ValueError(f"{path.name} : clé « {cle} » manquante dans un point d'entrée")
+        point.setdefault("sous_commande", None)
+        for arg in point["arguments"]:
+            if "nom" not in arg or "remplace" not in arg:
+                raise ValueError(f"{path.name} : chaque argument doit avoir « nom » et « remplace »")
+    data.setdefault("procedures_internes", [])
     return data
 
 
-def noms_arguments(interface: dict) -> list[str]:
-    return [a["nom"] for a in interface["arguments"]]
+def noms_arguments(point: dict) -> list[str]:
+    return [a["nom"] for a in point["arguments"]]
 
 
-def options_du_script(project_dir: Path, script: str) -> set[str] | None:
-    """Options déclarées par argparse, lues dans `python script --help` (None si la commande échoue)."""
-    result = subprocess.run(
-        [sys.executable, script, "--help"], cwd=project_dir, capture_output=True, text=True, timeout=60
-    )
-    if result.returncode != 0:
-        return None
-    return set(re.findall(r"(?<![\w-])(--[a-z0-9][a-z0-9-]*)", result.stdout)) - {"--help"}
+def aide_du_script(project_dir: Path, script: str, sous_commande: str | None = None) -> str | None:
+    """Sortie de `python script [sous_commande] --help` (None si la commande échoue)."""
+    commande = [sys.executable, script] + ([sous_commande] if sous_commande else []) + ["--help"]
+    result = subprocess.run(commande, cwd=project_dir, capture_output=True, text=True, timeout=60)
+    return result.stdout if result.returncode == 0 else None
+
+
+def options_de_l_aide(aide: str) -> set[str]:
+    return set(re.findall(r"(?<![\w-])(--[a-z0-9][a-z0-9-]*)", aide)) - {"--help"}
+
+
+def _cle(point: dict) -> str:
+    return f"{point['script']} {point['sous_commande'] or ''}".strip()
 
 
 def verifier_interface(project_dir: Path, interface: dict, precedente: dict | None) -> list[str]:
     erreurs = []
-    script = interface["script"]
-    if not (project_dir / script).exists():
-        return [f"interface.json : script introuvable ({script})"]
-    if not (project_dir / interface["fixture_principale"]).exists():
-        erreurs.append(f"interface.json : fixture principale introuvable ({interface['fixture_principale']})")
+    points = interface["points_entree"]
+    internes = [p.get("procedure", "") for p in interface["procedures_internes"]]
 
-    noms = noms_arguments(interface)
-    if not noms or noms[0] != "classeur":
-        erreurs.append("interface.json : le premier argument doit être « classeur »")
-    declarees = {n for n in noms if n.startswith("--")}
-    options = options_du_script(project_dir, script)
-    if options is None:
-        erreurs.append(f"`python {script} --help` a échoué")
-    else:
+    # --- chaque macro lançable est un point d'entrée ou une procédure interne déclarée
+    lancables = macros_lancables(project_dir)
+    for macro in lancables:
+        declare = [p for p in points if _meme_macro(p["procedure"], macro)] + [i for i in internes if _meme_macro(i, macro)]
+        if not declare:
+            erreurs.append(f"macro {macro} : ni point d'entrée, ni procédure interne déclarée dans interface.json")
+    for procedure in [p["procedure"] for p in points] + internes:
+        if lancables and not any(_meme_macro(procedure, m) for m in lancables):
+            erreurs.append(f"interface.json : {procedure} n'est pas une macro lançable du VBA (Sub publique sans paramètre)")
+    for macro in macros_boutons(project_dir):
+        if not any(_meme_macro(p["procedure"], macro) for p in points):
+            erreurs.append(f"macro {macro} reliée à un bouton : elle doit être un point d'entrée")
+
+    # --- noms déduits du VBA, sous-commandes cohérentes
+    par_script: dict[str, list[dict]] = {}
+    for point in points:
+        par_script.setdefault(point["script"], []).append(point)
+        if "." not in point["procedure"]:
+            erreurs.append(f"{point['procedure']} : écrire la procédure sous la forme « Module.Macro »")
+            continue
+        module = point["procedure"].split(".")[0]
+        if point["script"] != nom_script(module):
+            erreurs.append(f"{point['procedure']} : le script doit s'appeler {nom_script(module)} (et non {point['script']})")
+    for script, groupe in par_script.items():
+        if len(groupe) == 1 and groupe[0]["sous_commande"]:
+            erreurs.append(f"{script} : un seul point d'entrée, il ne doit pas y avoir de sous-commande")
+        if len(groupe) > 1:
+            for point in groupe:
+                attendu = nom_sous_commande(point["procedure"])
+                if point["sous_commande"] != attendu:
+                    erreurs.append(f"{point['procedure']} : la sous-commande doit être « {attendu} »")
+
+    # --- arguments et --help
+    for point in points:
+        script, sc = point["script"], point["sous_commande"]
+        if not (project_dir / script).exists():
+            erreurs.append(f"interface.json : script introuvable ({script})")
+            continue
+        fixture = point.get("fixture")
+        if fixture and not (project_dir / fixture).exists():
+            erreurs.append(f"{_cle(point)} : fixture introuvable ({fixture})")
+        noms = noms_arguments(point)
+        positionnels = [n for n in noms if not n.startswith("-")]
+        if positionnels and positionnels != ["classeur"] or ("classeur" in noms and noms[0] != "classeur"):
+            erreurs.append(f"{_cle(point)} : seul « classeur » peut être positionnel, en premier")
+        aide = aide_du_script(project_dir, script, sc)
+        if aide is None:
+            erreurs.append(f"`python {_cle(point)} --help` a échoué")
+            continue
+        declarees, options = {n for n in noms if n.startswith("--")}, options_de_l_aide(aide)
         if declarees - options:
-            erreurs.append(f"options de interface.json absentes du script : {sorted(declarees - options)}")
+            erreurs.append(f"{_cle(point)} : options de interface.json absentes du script : {sorted(declarees - options)}")
         if options - declarees:
-            erreurs.append(f"options du script absentes de interface.json : {sorted(options - declarees)}")
+            erreurs.append(f"{_cle(point)} : options du script absentes de interface.json : {sorted(options - declarees)}")
 
-    if precedente is not None and noms_arguments(precedente) != noms:
-        erreurs.append(
-            "les arguments ont changé par rapport à la traduction précédente : "
-            f"{noms_arguments(precedente)} → {noms}"
-        )
+    # --- stabilité par rapport à la traduction précédente
+    if precedente is not None:
+        actuels = {p["procedure"].lower(): p for p in points}
+        for ancien in precedente["points_entree"]:
+            nouveau = actuels.get(ancien["procedure"].lower())
+            if nouveau is None:
+                erreurs.append(f"point d'entrée {ancien['procedure']} présent dans la traduction précédente : supprimé")
+            elif _cle(nouveau) != _cle(ancien) or noms_arguments(nouveau) != noms_arguments(ancien):
+                erreurs.append(
+                    f"{ancien['procedure']} : la commande a changé depuis la traduction précédente "
+                    f"({_cle(ancien)} {noms_arguments(ancien)} → {_cle(nouveau)} {noms_arguments(nouveau)})"
+                )
     return erreurs
 
 
 def commandes(interface: dict) -> str:
     """Section « Commandes » du rapport, générée de façon déterministe depuis interface.json."""
-    script = interface["script"]
-    noms = noms_arguments(interface)
-    securite = ""
-    if "--mode-mail" in noms:
-        securite = " --mode-mail afficher"
-    test_mail = " --mode-mail aucun" if "--mode-mail" in noms else ""
-    dossier = " --dossier-sortie sortie_test" if "--dossier-sortie" in noms else ""
-    dossier_reel = ' --dossier-sortie "C:\\chemin\\vers\\sorties"' if "--dossier-sortie" in noms else ""
-
     lignes = [
         "```powershell",
         "pip install -r requirements.txt",
-        "",
-        "# Tests sur données fictives",
         "python tests/generer_donnees_fictives.py",
         "python -m pytest -q",
-        "",
-        "# Liste complète des options",
-        f"python {script} --help",
-        "",
-        "# Essai sur le classeur fictif (aucune action externe)",
-        f"python {script} {interface['fixture_principale']}{dossier}{test_mail}",
-        "",
-        "# Sur un vrai classeur (chemins complets ; mail affiché sans être envoyé)",
-        f'python {script} "C:\\chemin\\vers\\classeur.xlsm"{dossier_reel}{securite}',
         "```",
-        "",
-        "| Argument | Remplace dans le VBA | Valeur par défaut |",
-        "|---|---|---|",
     ]
-    for arg in interface["arguments"]:
-        defaut = arg.get("defaut")
-        defaut = "—" if defaut in (None, "") else f"`{defaut}`"
-        lignes.append(f"| `{arg['nom']}` | {arg['remplace']} | {defaut} |")
+    for point in interface["points_entree"]:
+        noms = noms_arguments(point)
+        appel = f"python {_cle(point)}"
+        classeur_fictif = f" {point['fixture']}" if "classeur" in noms and point.get("fixture") else ""
+        classeur_reel = ' "C:\\chemin\\vers\\classeur.xlsm"' if "classeur" in noms else ""
+        dossier = " --dossier-sortie sortie_test" if "--dossier-sortie" in noms else ""
+        dossier_reel = ' --dossier-sortie "C:\\chemin\\vers\\sorties"' if "--dossier-sortie" in noms else ""
+        mail_test = " --mode-mail aucun" if "--mode-mail" in noms else ""
+        mail_reel = " --mode-mail afficher" if "--mode-mail" in noms else ""
+        lignes += [
+            "",
+            f"### {point['procedure']}",
+            "",
+            f"Pourquoi une commande : {point.get('justification') or '—'}",
+            "",
+            "```powershell",
+            f"{appel} --help",
+            f"{appel}{classeur_fictif}{dossier}{mail_test}        # essai sur données fictives",
+            f"{appel}{classeur_reel}{dossier_reel}{mail_reel}        # sur un vrai classeur",
+            "```",
+        ]
+        if point["arguments"]:
+            lignes += ["", "| Argument | Remplace dans le VBA | Valeur par défaut |", "|---|---|---|"]
+            for arg in point["arguments"]:
+                defaut = arg.get("defaut")
+                defaut = "—" if defaut in (None, "") else f"`{defaut}`"
+                lignes.append(f"| `{arg['nom']}` | {arg['remplace']} | {defaut} |")
+    if interface["procedures_internes"]:
+        lignes += ["", "### Procédures internes (sans commande)", ""]
+        lignes += [f"- {p['procedure']} : {p.get('raison', '')}" for p in interface["procedures_internes"]]
     return "\n".join(lignes)
 
 

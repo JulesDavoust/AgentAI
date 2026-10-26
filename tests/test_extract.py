@@ -103,3 +103,38 @@ def test_classeur_sans_macros(tmp_path):
     path.write_bytes((tmp_path / "vide.xlsx").read_bytes())
     with pytest.raises(ExtractionError):
         discover_projects(path)
+
+
+def test_boutons_et_feuilles_masquees(tmp_path):
+    import xlsxwriter
+
+    from conftest import VBA_BIN
+    from vba2py.extract import _nom_macro
+
+    path = tmp_path / "Boutons.xlsm"
+    wb = xlsxwriter.Workbook(str(path))
+    accueil = wb.add_worksheet("Accueil")
+    accueil.insert_button("B2", {"macro": "say_hello", "caption": "Dire bonjour"})
+    accueil.insert_button("B5", {"macro": "Module1.Autre", "caption": "Autre macro"})
+    base = wb.add_worksheet("Base")
+    base.write("A1", "x")
+    base.hide()
+    wb.add_vba_project(str(VBA_BIN))
+    wb.close()
+
+    [project] = discover_projects(path)
+    structure = project.workbook_structure
+    assert structure["boutons"] == [
+        {"feuille": "Accueil", "texte": "Dire bonjour", "macro": "say_hello"},
+        {"feuille": "Accueil", "texte": "Autre macro", "macro": "Module1.Autre"},
+    ]
+    assert {f["nom"]: f["visibilite"] for f in structure["feuilles"]} == {"Accueil": "visible", "Base": "masquée"}
+
+    project_dir = write_project_sources(project, tmp_path / "sortie")
+    extraction = (project_dir / SOURCE_DIRNAME / "EXTRACTION.md").read_text(encoding="utf-8")
+    assert "| Accueil | Dire bonjour | say_hello |" in extraction
+    assert "Feuilles masquées : Base" in extraction
+
+    assert _nom_macro("[0]!LancerPipelineComplet") == "LancerPipelineComplet"
+    assert _nom_macro("'Mon classeur.xlsm'!Module1.Macro") == "Module1.Macro"
+    assert _nom_macro("Macro") == "Macro"

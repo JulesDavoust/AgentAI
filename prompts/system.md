@@ -50,6 +50,7 @@ RAPPORT.md                        structure imposée (voir « Rapport »)
 connecteurs/                      appels vers d'autres applications, si le VBA en fait
   __init__.py
   outlook.py                      mails Outlook
+  systeme.py                      ouverture de fichiers (FollowHyperlink), si le VBA en fait
   excel.py                        ce qu'openpyxl ne sait pas faire (voir la table de correspondance)
 tests/
   __init__.py
@@ -70,37 +71,89 @@ tests/
 
 # Interface en ligne de commande
 
-Les commandes doivent être identiques d'une traduction à l'autre. Les noms ne se choisissent
-pas, ils se déduisent du VBA :
+Chaque macro que l'utilisateur lance devient une **commande Python** (qui remplace aussi les
+boutons du classeur). Les commandes doivent être identiques d'une traduction à l'autre : rien
+ne se choisit, tout se déduit du VBA.
+
+## Quelles macros deviennent des commandes (points d'entrée)
+
+Les macros lançables sont les `Sub` publiques **sans paramètre** des modules standard (celles
+qu'Excel propose dans Alt+F8). Pour chacune, décide :
+1. **Point d'entrée certain** : macro reliée à un bouton (voir « Macros reliées à des boutons »
+   dans `EXTRACTION.md`).
+2. **Point d'entrée probable** : macro appelée par aucune autre procédure, ou que les
+   commentaires présentent comme un bouton ou une action de l'utilisateur.
+3. **Procédure interne** : macro seulement appelée par d'autres procédures, sans rôle propre
+   pour l'utilisateur. Pas de commande.
+
+Chaque macro lançable figure **soit** dans `points_entree`, **soit** dans `procedures_internes`,
+avec une justification. vba2py le vérifie, ainsi que la présence des macros reliées à un bouton.
+
+## Noms
+
+- Un script par module VBA : nom du module en minuscules, mots séparés par `_`, sans accents
+  (`CréationCSV` → `creation_csv.py`, `TestInterfaceMVS` → `test_interface_mvs.py`).
+- Un seul point d'entrée dans le module : pas de sous-commande
+  (`python creation_csv.py classeur.xlsm ...`).
+- Plusieurs points d'entrée dans le module : une **sous-commande** par macro (argparse
+  `add_subparsers`), nom de la macro en minuscules, mots séparés par `-`, sans accents
+  (`Demo_EcrireEtLire` → `demo-ecrire-et-lire`, `MVS_Entree` → `mvs-entree`,
+  `GenererCSVDuJourV3` → `generer-csv-du-jour-v3`).
+
+## Arguments de chaque commande
 
 1. Premier argument, positionnel : `classeur` (remplace `ThisWorkbook` / `ActiveWorkbook`).
 2. `--dossier-sortie` : dossier où sont créés les fichiers produits (remplace un chemin de
    sauvegarde codé en dur, ex. `SaveFolder()`). Valeur par défaut : `sortie`, jamais un chemin
    personnel trouvé dans le VBA (le citer dans « Éléments suspects »).
 3. Chaque constante VBA qui devient un paramètre : son nom en minuscules, `_` remplacé par `-`
-   (`MAIL_TO` → `--mail-to`, `SEND_MAIL` → `--send-mail`). Valeur par défaut = valeur du VBA.
+   (`MAIL_TO` → `--mail-to`, `CSV_FOLDER` → `--csv-folder`). Valeur par défaut = valeur du VBA,
+   sauf un chemin personnel codé en dur, remplacé par un dossier relatif (ex. `csv`). Deux
+   constantes de modules différents qui désignent le même dossier (l'un écrit, l'autre lit)
+   gardent chacune leur nom mais ont **la même valeur par défaut**.
    Exception : quand la macro envoie un mail, `SEND_MAIL` (ou équivalent) devient
    `--mode-mail {envoyer,afficher,aucun}`, défaut fidèle au VBA.
 4. Chaque `InputBox` : le nom de la variable VBA qui reçoit la saisie (`saisie` → `--saisie`).
 5. Aucun autre argument, aucun alias, aucun argument positionnel supplémentaire.
 
-Écris `interface.json`, dans l'ordre où les arguments sont déclarés dans argparse :
+## interface.json
+
+Arguments dans l'ordre où ils sont déclarés dans argparse ; `procedure` sous la forme
+`Module.Macro` ; `fixture` : le classeur fictif adapté pour essayer la commande.
 
 ```json
 {
-  "script": "nom_du_module.py",
-  "procedure_principale": "NomDeLaProcedureVBA",
-  "fixture_principale": "tests/fixtures/<classeur fictif le plus complet>.xlsx",
-  "arguments": [
-    {"nom": "classeur", "remplace": "ThisWorkbook", "defaut": null},
-    {"nom": "--dossier-sortie", "remplace": "SaveFolder()", "defaut": "sortie"}
+  "points_entree": [
+    {
+      "script": "macro_initiale.py",
+      "sous_commande": null,
+      "procedure": "MacroInitiale.LancerPipelineComplet",
+      "justification": "bouton « Test »",
+      "fixture": "tests/fixtures/classeur_complet.xlsx",
+      "arguments": [
+        {"nom": "classeur", "remplace": "ThisWorkbook", "defaut": null},
+        {"nom": "--dossier-sortie", "remplace": "SaveFolder()", "defaut": "sortie"}
+      ]
+    },
+    {
+      "script": "test_interface_mvs.py",
+      "sous_commande": "demo-ecrire-et-lire",
+      "procedure": "TestInterfaceMVS.Demo_EcrireEtLire",
+      "justification": "commentaire « DEMOS (boutons optionnels) »",
+      "fixture": "tests/fixtures/classeur_mvs.xlsx",
+      "arguments": [{"nom": "classeur", "remplace": "ThisWorkbook", "defaut": null}]
+    }
+  ],
+  "procedures_internes": [
+    {"procedure": "MacroInitiale.AjouterDonneesDuJour", "raison": "appelée seulement par LancerPipelineComplet"}
   ]
 }
 ```
 
-Si `_source_vba/interface_precedente.json` existe, tu dois garder **exactement** les mêmes
-arguments, dans le même ordre (seules les valeurs par défaut peuvent changer si le VBA a changé).
-vba2py vérifie que `python <script> --help` déclare exactement les options de `interface.json`.
+Si `_source_vba/interface_precedente.json` existe, garde **exactement** les mêmes commandes
+pour les macros qu'il contient (script, sous-commande, arguments et leur ordre ; seules les
+valeurs par défaut peuvent changer si le VBA a changé). vba2py vérifie que `python <script>
+[<sous-commande>] --help` déclare exactement les options de `interface.json`.
 
 # Technologies et correspondances
 
@@ -153,7 +206,7 @@ si aucune librairie autorisée ne permet l'action. Elle doit alors être signal�
   ne modifie le test que s'il contredit le comportement du VBA d'origine, et justifie-le dans le rapport.
 - Aucun test ne doit déclencher une action réelle (mail, lancement d'Excel, réseau). `conftest.py`
   contient une fixture `autouse` qui remplace par une fonction levant une erreur : les fonctions
-  de `connecteurs/outlook.py`, les fonctions d'entrée de `connecteurs/excel.py` (celles qui
+  de `connecteurs/outlook.py` et `connecteurs/systeme.py`, les fonctions d'entrée de `connecteurs/excel.py` (celles qui
   ouvrent une session) et `bibliotheque.excel_com.ouvrir_excel`. Les fonctions d'étape Excel,
   qui reçoivent un `Workbook`, restent testables avec `EnregistreurCOM`. Les tests passent
   explicitement une fausse fonction et vérifient ce qu'elle a reçu : destinataires, objet,

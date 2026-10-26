@@ -12,9 +12,10 @@
 
 ## 3. Entrées attendues
 
-<!-- Un paragraphe par argument de interface.json, dans le même ordre : ce que l'argument
-     remplace dans le VBA (ThisWorkbook, constante, InputBox...), ce qu'il doit contenir
-     (feuilles, tableaux, colonnes requis pour un classeur), sa valeur par défaut. -->
+<!-- Pour chaque point d'entrée de interface.json (un sous-titre « ### Module.Macro ») : ce que
+     fait la commande, puis un paragraphe par argument, dans le même ordre : ce qu'il remplace
+     dans le VBA (ThisWorkbook, constante, InputBox...), ce qu'il doit contenir (feuilles,
+     tableaux, colonnes requis pour un classeur), sa valeur par défaut. -->
 
 ## 4. Commandes
 

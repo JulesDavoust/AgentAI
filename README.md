@@ -68,8 +68,13 @@ sortie/
 
 - **Rapport** : titres et ordre imposés par `prompts/rapport_modele.md`. Les sections
   « Commandes », « Tests » et « Extraction » sont écrites par vba2py, pas par l'agent.
-- **Commandes** : les noms d'arguments sont déduits du VBA par des règles fixes, et décrits
-  dans `interface.json`. Après une traduction réussie, ce contrat est enregistré dans
+- **Commandes** : chaque macro que l'utilisateur lance (reliée à un bouton, ou non appelée par
+  une autre procédure) devient une commande Python, qui remplace aussi les boutons. Un script
+  par module VBA (`CréationCSV` → `creation_csv.py`) et, s'il contient plusieurs macros, une
+  sous-commande par macro (`Demo_EcrireEtLire` → `demo-ecrire-et-lire`). Les noms de scripts,
+  de sous-commandes et d'arguments sont déduits du VBA par des règles fixes, et décrits dans
+  `interface.json` ; chaque macro lançable (`Sub` publique sans paramètre) y est soit un point
+  d'entrée, soit une procédure interne justifiée. Après une traduction réussie, ce contrat est enregistré dans
   `interfaces/<projet>.json` (à committer) ; les traductions suivantes du même projet doivent
   le respecter.
 - **Vérification indépendante** (`traduire` et `verifier`) : tests relancés, `--help` du script

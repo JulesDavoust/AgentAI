@@ -27,14 +27,22 @@ Interdits partout : `xlwings` (Excel n'est plus utilisé, openpyxl le remplace),
 | `Debug.Print` | `logging.debug` |
 | `Application.ScreenUpdating`, `Calculation`, `DisplayAlerts`, `EnableEvents` | à supprimer (aucun équivalent nécessaire) — le noter dans le rapport |
 | `Workbook_Open`, `Worksheet_Change` et autres événements | fonctions nommées (`au_demarrage_classeur()`, `sur_modification_feuille(cellules)`) appelées explicitement ; signaler dans le rapport qu'il n'y a plus de déclenchement automatique |
-| `Application.Run "Autre.xlsm!Macro"` | import Python si le module est traduit dans la même sortie, sinon `# TODO` + rapport |
+| `Application.Run "Macro"` / `Application.Run "Module.Macro"` (macro **du même classeur**) | simple appel Python de la fonction traduite (import si elle est dans un autre module) ; si le nom est construit dynamiquement, un dictionnaire `{nom VBA: fonction}` |
+| `Application.Run "Autre.xlsm!Macro"` (macro d'**un autre classeur**) | jamais exécuté : `# TODO(vba2py)` + section « Écarts » |
+| `ws.Activate`, `Range.Select`, `ActiveWindow.DisplayGridlines`, `ActiveWindow.Zoom` | état dans lequel la macro laisse le classeur, enregistré avec openpyxl : `wb.active = ws`, `ws.sheet_view.selection[0].activeCell` / `.sqref`, `ws.sheet_view.showGridLines`, `ws.sheet_view.zoomScale` (pour la feuille concernée) |
+| `ws.Visible = xlSheetHidden` / `xlSheetVeryHidden` / `xlSheetVisible` | `ws.sheet_state = "hidden"` / `"veryHidden"` / `"visible"` (voir aussi « Feuilles masquées » dans `EXTRACTION.md`) |
+| `ws.Hyperlinks.Add Anchor:=cell, Address:=..., TextToDisplay:=...` | `cell.hyperlink = adresse` ; `cell.value = texte` ; `cell.style = "Hyperlink"` |
+| `ws.Hyperlinks.Delete` | `cell.hyperlink = None` pour chaque cellule qui en porte un |
+| `ThisWorkbook.FollowHyperlink chemin` (ouvrir un fichier ou une page) | `os.startfile(str(Path(chemin).resolve()))` dans `connecteurs/systeme.py` ; fonction injectable, bloquée dans les tests (fixture `autouse`) ; une constante comme `OPEN_MAP` devient une option (`--open-map`) |
 
 ## Fichiers, dates, chaînes
 
 | VBA | Python |
 |---|---|
 | `Dir`, `FileSystemObject`, `MkDir`, `Kill`, `FileCopy` | `pathlib.Path` (`glob`, `mkdir`, `unlink`), `shutil.copy` |
-| `Open ... For Input/Output` | `open(..., encoding=...)` ou `csv` |
+| `Open chemin For Output As #f` + `Print #f, ligne` | `open(chemin, "w", encoding="cp1252", newline="\r\n")` puis `f.write(ligne + "\n")` : VBA écrit en **Windows-1252** avec des fins de ligne **Windows**, même si le contenu annonce `charset='utf-8'` (le reproduire et le signaler dans le rapport). `For Append` → mode `"a"` |
+| `Open chemin For Input As #f` + `Line Input #f, ligne` | `open(chemin, encoding="cp1252", newline="")` et lecture ligne par ligne sans le saut de ligne ; `EOF(f)` → fin de l'itération |
+| `Write #f, ...` | valeurs séparées par des virgules, textes entre guillemets, dates `#aaaa-mm-jj#` : reproduire exactement |
 | `Date`, `Now`, `DateAdd`, `DateDiff`, `DateSerial` | `datetime`, `timedelta` |
 | Dates stockées en numéro de série Excel | `openpyxl` les convertit déjà ; sinon `datetime(1899, 12, 30) + timedelta(days=n)` |
 | `Format(x, "0.00")`, `Format(d, "dd/mm/yyyy")` | f-strings / `strftime` |
@@ -95,7 +103,7 @@ Cas typiques (liste non exhaustive : applique la règle à tout le reste) :
 | `GoalSeek`, Solveur | moteur de calcul d'Excel |
 | `AutoFilter` / `Sort` dont l'état doit rester réellement appliqué dans le classeur, `AutoFit` exact | openpyxl n'écrit que des critères, ne masque/trie/mesure rien lui-même |
 
-Exceptions (jamais exécutées, même via Excel) : `Application.Run`, macros d'autres classeurs,
+Exceptions (jamais exécutées, même via Excel) : `Application.Run` vers un autre classeur,
 `SendKeys`, `Shell` → `# TODO(vba2py)` et section « Écarts ».
 
 Organisation :
@@ -125,6 +133,27 @@ Organisation :
 
 ## Pièges sémantiques à respecter
 
+- **`Val`, `IsNumeric`, `CDate`, `Format` et les réglages régionaux** :
+  - `Val("12,5")` vaut 12 et `Val("1 234")` vaut 1234 : `Val` lit **toujours** le point comme
+    séparateur décimal, ignore les espaces et s'arrête au premier caractère invalide
+    (`Val("abc")` = 0). Écrire une fonction `val()` qui reproduit ce comportement ;
+  - `IsNumeric` et `CDate` dépendent des réglages régionaux de Windows (ici français, séparateur
+    décimal `","`) : `IsNumeric("12,5")` est vrai, c'est pourquoi certaines macros remplacent le
+    point par `Application.International(xlDecimalSeparator)` avant de tester ;
+    `CDate("05/10/2026")` est le **5 octobre**. Reproduire ces règles explicitement (ne pas
+    dépendre de la locale de la machine Python) ;
+  - `Format(d, "dd/mm/yyyy")` → `d.strftime("%d/%m/%Y")` ; `Format(x, "0.00")` donne un point
+    décimal en code mais une virgule à l'affichage français : reproduire ce que la macro écrit
+    réellement dans le fichier ou la cellule.
+- **`Err.Raise vbObjectError + n, , message`** : une exception Python dédiée (classe nommée) avec
+  le même message ; `Err.Number` / `Err.Description` → attributs de l'exception.
+- **Variables de module** (`Private ecran As Worksheet` en tête de module) : en VBA elles gardent
+  leur valeur entre deux macros tant que le classeur reste ouvert. En Python, chaque commande
+  repart de zéro : regroupe cet état dans une classe, et si une macro dépend d'une valeur laissée
+  par une macro précédente, signale-le dans « Écarts ».
+- **Code dupliqué entre modules** (`LogMsg`, `GetOrCreateSheet`... recopiés dans chaque
+  module) : ne les regroupe dans un module commun que s'ils sont **strictement identiques** ;
+  sinon chaque module garde sa version. Indique le regroupement dans « Choix de traduction ».
 - **`ByRef` est le mode par défaut en VBA** : si une procédure modifie un argument, la version Python doit retourner la nouvelle valeur (ou modifier un objet mutable) et l'appelant doit l'utiliser.
 - **Tableaux** : `Dim t(1 To 10)` ou `Option Base 1` → adapter les indices ; `UBound`/`LBound` → `len`.
 - **Division** : `/` donne un décimal, `\` est la division entière (`//` mais tronquée vers zéro pour les négatifs : utiliser `int(a / b)`), `Mod` garde le signe du dividende (`math.fmod`).

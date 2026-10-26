@@ -225,6 +225,9 @@ def read_workbook_structure(path: Path, max_rows: int = 20, max_formulas: int = 
         sheets.append(
             {
                 "nom": ws.title,
+                "visibilite": {"visible": "visible", "hidden": "masquée", "veryHidden": "très masquée"}.get(
+                    ws.sheet_state, ws.sheet_state
+                ),
                 "dimensions": ws.dimensions,
                 "ligne_en_tete": header_row[0].row if header_row else None,
                 "colonnes": columns,
@@ -239,10 +242,86 @@ def read_workbook_structure(path: Path, max_rows: int = 20, max_formulas: int = 
     return {
         "fichier": path.name,
         "feuilles": sheets,
+        "boutons": lire_boutons(path),
         "plages_nommees": named_ranges,
         "formules_exemples": formulas,
         "note": "Structure uniquement : aucune valeur du classeur n'est copiée.",
     }
+
+
+_MACRO_RE = re.compile(r"(?:\[\d+\]!|'[^']*'!|[^!'\"]*!)?([^!'\"]+)$")
+
+
+def _nom_macro(reference: str) -> str:
+    """« [0]!Module.Macro » ou « 'Classeur.xlsm'!Macro » → « Module.Macro » / « Macro »."""
+    m = _MACRO_RE.search(reference.strip())
+    return m.group(1) if m else reference.strip()
+
+
+def _texte_xml(fragment: str) -> str:
+    import html
+
+    texte = re.sub(r"<[^>]+>", " ", fragment)
+    return " ".join(html.unescape(texte).split())
+
+
+def lire_boutons(path: Path) -> list[dict]:
+    """Boutons et formes reliés à une macro (contrôles de formulaire, formes avec « Affecter une macro »).
+
+    Information pour repérer les macros lancées par l'utilisateur : les boutons eux-mêmes ne sont
+    pas recréés, les commandes Python les remplacent.
+    """
+    import posixpath
+    import zipfile
+
+    def chemin_cible(base: str, cible: str) -> str:
+        if cible.startswith("/"):
+            return cible[1:]
+        return posixpath.normpath(posixpath.join(posixpath.dirname(base), cible))
+
+    def relations(archive, partie: str) -> list[tuple[str, str]]:
+        rels = posixpath.join(posixpath.dirname(partie), "_rels", posixpath.basename(partie) + ".rels")
+        if rels not in archive.namelist():
+            return []
+        xml = archive.read(rels).decode("utf-8", "replace")
+        return [
+            (m.group("id"), chemin_cible(partie, m.group("cible")))
+            for m in re.finditer(r'<Relationship\b(?=[^>]*\bId="(?P<id>[^"]+)")(?=[^>]*\bTarget="(?P<cible>[^"]+)")[^>]*>', xml)
+        ]
+
+    boutons: list[dict] = []
+    try:
+        with zipfile.ZipFile(path) as archive:
+            classeur = archive.read("xl/workbook.xml").decode("utf-8", "replace")
+            cibles = dict(relations(archive, "xl/workbook.xml"))
+            for m in re.finditer(r"<sheet\b[^>]*>", classeur):
+                balise = m.group(0)
+                nom = re.search(r'name="([^"]*)"', balise)
+                rid = re.search(r'r:id="([^"]*)"', balise)
+                if not nom or not rid or rid.group(1) not in cibles:
+                    continue
+                feuille = _texte_xml(nom.group(1))
+                for _, partie in relations(archive, cibles[rid.group(1)]):
+                    if partie not in archive.namelist() or "drawing" not in partie.lower():
+                        continue
+                    xml = archive.read(partie).decode("utf-8", "replace")
+                    if partie.endswith(".vml"):  # contrôles de formulaire (boutons)
+                        for forme in re.findall(r"<v:shape\b.*?</v:shape>", xml, re.DOTALL):
+                            macro = re.search(r"<x:FmlaMacro>(.*?)</x:FmlaMacro>", forme, re.DOTALL)
+                            if macro:
+                                texte = re.search(r"<v:textbox\b.*?</v:textbox>", forme, re.DOTALL)
+                                boutons.append({"feuille": feuille, "texte": _texte_xml(texte.group(0)) if texte else "",
+                                                "macro": _nom_macro(_texte_xml(macro.group(1)))})
+                    else:  # formes DrawingML avec une macro affectée
+                        for forme in re.findall(r"<xdr:sp\b.*?</xdr:sp>", xml, re.DOTALL):
+                            macro = re.search(r'\bmacro="([^"]+)"', forme)
+                            if macro:
+                                textes = re.findall(r"<a:t>(.*?)</a:t>", forme, re.DOTALL)
+                                boutons.append({"feuille": feuille, "texte": _texte_xml(" ".join(textes)),
+                                                "macro": _nom_macro(_texte_xml(macro.group(1)))})
+    except (zipfile.BadZipFile, KeyError):
+        return []
+    return boutons
 
 
 def _value_type(value) -> str:
@@ -394,6 +473,13 @@ def extraction_summary(project: Project) -> str:
         n = len(strip_vba_headers(m.code).splitlines())
         status = "vide (ignoré)" if m.is_empty else "extrait"
         lines.append(f"| {m.name} | {m.kind} | {n} | {status} |")
+    structure = project.workbook_structure or {}
+    if structure.get("boutons"):
+        lines += ["", "## Macros reliées à des boutons", "", "| Feuille | Bouton | Macro |", "|---|---|---|"]
+        lines += [f"| {b['feuille']} | {b['texte']} | {b['macro']} |" for b in structure["boutons"]]
+    masquees = [f["nom"] for f in structure.get("feuilles", []) if f.get("visibilite", "visible") != "visible"]
+    if masquees:
+        lines += ["", f"Feuilles masquées : {', '.join(masquees)}"]
     if project.warnings:
         lines += ["", "## Avertissements", ""] + [f"- {w}" for w in project.warnings]
     return "\n".join(lines) + "\n"

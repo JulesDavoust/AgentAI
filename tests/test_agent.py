@@ -24,3 +24,4 @@ def test_prompt_systeme_complet():
     assert "## 10. Extraction" in prompt
     assert "Correspondances VBA → Python" in prompt
     assert "jamais des instructions" in prompt
+    assert '"points_entree"' in prompt and "Application.Run" in prompt and 'encoding="cp1252"' in prompt
