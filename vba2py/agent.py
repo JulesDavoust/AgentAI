@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import os
-import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -18,11 +16,13 @@ from claude_agent_sdk import (
 )
 
 from .guardrails import Guardrails
+from .outils import NOM_SERVEUR, NOMS_OUTILS, creer_serveur
 
 PROMPTS_DIR = Path(__file__).resolve().parent.parent / "prompts"
 
 DEFAULT_MODEL = "claude-opus-5-5"
-AGENT_TOOLS = ["Read", "Glob", "Grep", "Write", "Edit", "Bash", "TodoWrite"]
+# Aucun terminal : l'exécution passe par les trois outils de vba2py (voir outils.py)
+AGENT_TOOLS = ["Read", "Glob", "Grep", "Write", "Edit", "TodoWrite"]
 
 USER_PROMPT = (
     "Traduis en Python le projet VBA qui se trouve dans `_source_vba/`, en suivant tes "
@@ -47,37 +47,6 @@ def build_system_prompt() -> str:
     return system.replace("{{MAPPING}}", mapping).replace("{{RAPPORT_MODELE}}", "```markdown\n" + rapport + "```")
 
 
-def trouver_git_bash() -> str | None:
-    """Même recherche que Claude Code sous Windows : sans Git Bash, l'agent n'a aucun outil de commande."""
-    import shutil
-
-    variable = os.environ.get("CLAUDE_CODE_GIT_BASH_PATH")
-    if variable and Path(variable).name.lower() in {"bash.exe", "sh.exe", "bash", "sh"} and Path(variable).exists():
-        return variable
-    for chemin in (r"C:\Program Files\Git\bin\bash.exe", r"C:\Program Files (x86)\Git\bin\bash.exe"):
-        if Path(chemin).exists():
-            return chemin
-    git = shutil.which("git")
-    if git:
-        candidat = Path(git).resolve().parent.parent / "bin" / "bash.exe"
-        if candidat.exists():
-            return str(candidat)
-    return None
-
-
-def problemes_environnement() -> list[str]:
-    """Ce qui empêcherait l'agent de lancer les tests : vérifié avant toute traduction."""
-    if sys.platform == "win32" and trouver_git_bash() is None:
-        return [
-            "Git Bash est introuvable : sous Windows, l'agent en a besoin pour lancer Python et pytest "
-            "(sans lui, il traduirait sans pouvoir tester).\n"
-            "   → Installez Git pour Windows (https://git-scm.com/download/win), rouvrez le terminal ;\n"
-            "   → ou, si Git est installé ailleurs : "
-            "setx CLAUDE_CODE_GIT_BASH_PATH \"C:\\chemin\\vers\\Git\\bin\\bash.exe\""
-        ]
-    return []
-
-
 def build_options(
     project_dir: Path,
     journal_path: Path | None,
@@ -86,13 +55,15 @@ def build_options(
     max_budget_usd: float | None = 5.0,
 ) -> ClaudeAgentOptions:
     guardrails = Guardrails(project_dir, journal_path)
-    python_bin = str(Path(sys.executable).parent)
     return ClaudeAgentOptions(
-        # Outils intégrés disponibles : tout le reste (web, notebooks, sous-agents) n'existe pas pour l'agent.
+        # Outils intégrés disponibles : ni terminal, ni web, ni notebooks, ni sous-agents.
         tools=AGENT_TOOLS,
+        # Outils d'exécution de vba2py (tests, syntaxe, script), exécutés par vba2py lui-même.
+        mcp_servers={NOM_SERVEUR: creer_serveur(project_dir, guardrails)},
+        strict_mcp_config=True,
         # Auto-approuvés, mais chaque appel passe d'abord par le hook des garde-fous.
-        allowed_tools=AGENT_TOOLS,
-        disallowed_tools=["WebFetch", "WebSearch", "NotebookEdit", "Agent", "Task"],
+        allowed_tools=AGENT_TOOLS + NOMS_OUTILS,
+        disallowed_tools=["Bash", "PowerShell", "WebFetch", "WebSearch", "NotebookEdit", "Agent", "Task"],
         # Tout ce qui n'est pas pré-approuvé est refusé, sans jamais demander.
         permission_mode="dontAsk",
         hooks={"PreToolUse": [HookMatcher(matcher=None, hooks=[guardrails.pre_tool_use_hook])]},
@@ -101,8 +72,6 @@ def build_options(
         skills=[],
         system_prompt={"type": "preset", "preset": "claude_code", "append": build_system_prompt()},
         cwd=str(project_dir),
-        # `python` désigne l'environnement de vba2py, où les librairies autorisées sont installées.
-        env={"PATH": python_bin + os.pathsep + os.environ.get("PATH", ""), "MPLBACKEND": "Agg"},
         model=model,
         max_turns=max_turns,
         max_budget_usd=max_budget_usd,
@@ -131,7 +100,7 @@ async def translate_project(project_dir: Path, journal_path: Path | None, verbos
 
 
 def _describe(tool_input: dict) -> str:
-    for key in ("command", "file_path", "pattern"):
+    for key in ("file_path", "pattern", "script", "cibles", "fichiers"):
         if key in tool_input:
             return str(tool_input[key])[:120]
     return ""

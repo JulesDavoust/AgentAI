@@ -45,13 +45,7 @@ def cmd_extraire(args) -> list[tuple[Path, Path]]:
 
 
 def cmd_traduire(args) -> int:
-    from vba2py.agent import problemes_environnement, translate_project
-
-    problemes = problemes_environnement()
-    if problemes:
-        for probleme in problemes:
-            print(f"❌ {probleme}", file=sys.stderr)
-        return 2
+    from vba2py.agent import translate_project
 
     projects = cmd_extraire(args)
     journals = Path(args.sortie).resolve() / "_journaux"

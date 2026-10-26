@@ -11,11 +11,6 @@ source .venv/bin/activate          # Windows : .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-**Windows : Git pour Windows est obligatoire** (https://git-scm.com/download/win). L'agent
-s'appuie sur Git Bash pour lancer Python et pytest ; sans lui, `traduire` s'arrête avec un message
-explicatif. Si Git est installé à un emplacement inhabituel :
-`setx CLAUDE_CODE_GIT_BASH_PATH "C:\chemin\vers\Git\bin\bash.exe"`.
-
 Clé API (créée sur console.anthropic.com) :
 
 ```bash
@@ -86,8 +81,14 @@ sortie/
   d'instructions trouvées dans le code ou ses commentaires.
 - Chaque action de l'agent est contrôlée par du code (`vba2py/guardrails.py`) avant exécution :
   lecture et écriture limitées au dossier du projet, `_source_vba/` en lecture seule,
-  commandes limitées à `pytest`, `py_compile` et aux scripts du projet, pas d'accès web,
-  imports dangereux refusés dans le code écrit (réseau, sous-processus, `eval`, COM Windows).
+  pas d'accès web, imports dangereux refusés dans le code écrit (réseau, sous-processus,
+  `eval`, COM Windows).
+- **Aucun terminal** : l'agent ne tape aucune commande. Il dispose de trois outils fournis par
+  vba2py (`vba2py/outils.py`), que vba2py exécute lui-même avec son propre Python, sans shell :
+  `lancer_tests` (pytest, éventuellement sur des cibles, un marqueur ou un mot-clé),
+  `verifier_syntaxe` (fichiers `.py`) et `executer_script` (un script `.py` du projet). Leurs
+  arguments sont contrôlés par les garde-fous. Aucun prérequis de terminal : pas besoin de Git
+  Bash sous Windows.
 - Les réglages de la machine (`~/.claude`, CLAUDE.md, skills) ne sont pas chargés.
 - Limites par projet : nombre de tours (`--max-tours`) et budget en dollars (`--budget`).
 - Limite assumée : `pytest` exécute le code écrit par l'agent. Pour des classeurs d'origine

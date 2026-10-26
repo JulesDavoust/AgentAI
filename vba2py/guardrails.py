@@ -8,8 +8,9 @@ Règles :
 - écriture : uniquement dans le dossier du projet, jamais dans `_source_vba/`, et
   seulement des fichiers texte (.py, .md, .txt, .json, .csv, .toml, .ini, .cfg) ;
 - code Python écrit : pas de réseau, de sous-processus, d'eval/exec, ni de COM Windows ;
-- commandes : uniquement pytest, py_compile et l'exécution d'un script .py du projet ;
-- tout autre outil (web, notebooks, sous-agents non prévus...) est refusé.
+- aucun terminal : l'agent n'a que trois outils d'exécution fournis par vba2py (lancer les tests,
+  vérifier la syntaxe, exécuter un script .py du projet), dont les arguments sont contrôlés ici ;
+- tout autre outil (terminal, web, notebooks, sous-agents...) est refusé.
 
 Limite assumée : pytest exécute le code écrit par l'agent. Le filtrage du contenu réduit
 le risque mais ne remplace pas une isolation complète (conteneur) pour des classeurs
@@ -20,7 +21,6 @@ from __future__ import annotations
 
 import json
 import re
-import shlex
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -42,7 +42,10 @@ _FORBIDDEN_CODE = [
     (re.compile(r"(?<![\w.])(eval|exec|compile|__import__)\s*\("), "exécution dynamique de code interdite"),
 ]
 
-_SHELL_METACHARACTERS = re.compile(r"[;&|`$<>\n\r]")
+# Outils d'exécution fournis par vba2py (serveur MCP interne « vba2py », voir outils.py)
+OUTIL_TESTS = "mcp__vba2py__lancer_tests"
+OUTIL_SYNTAXE = "mcp__vba2py__verifier_syntaxe"
+OUTIL_SCRIPT = "mcp__vba2py__executer_script"
 
 # Modules autorisés uniquement dans connecteurs/ (intégrations Office fidèles au VBA)
 CONNECTOR_DIRNAME = "connecteurs"
@@ -69,7 +72,9 @@ class Guardrails:
             "Write": self._check_write,
             "Edit": self._check_edit,
             "MultiEdit": self._check_edit,
-            "Bash": self._check_bash,
+            OUTIL_TESTS: self._check_tests,
+            OUTIL_SYNTAXE: self._check_syntaxe,
+            OUTIL_SCRIPT: self._check_script,
         }.get(tool_name)
         if handler is None:
             return False, f"outil « {tool_name} » non autorisé pour cet agent"
@@ -135,56 +140,35 @@ class Guardrails:
                 return False, f"{label} dans {Path(path).name} : « {match.group(0).strip()} »"
         return True, "contenu Python conforme"
 
-    def _check_bash(self, tool_input: dict) -> tuple[bool, str]:
-        command = (tool_input.get("command") or "").strip()
-        if tool_input.get("run_in_background"):
-            return False, "commandes en arrière-plan interdites"
-        if _SHELL_METACHARACTERS.search(command):
-            return False, "enchaînements, redirections et substitutions de commandes interdits"
-        try:
-            tokens = shlex.split(command)
-        except ValueError:
-            return False, "commande illisible"
-        if not tokens:
-            return False, "commande vide"
+    def _check_tests(self, tool_input: dict) -> tuple[bool, str]:
+        cibles = tool_input.get("cibles") or []
+        for cible in cibles:
+            if str(cible).startswith("-"):
+                return False, f"cible de test invalide (les options ne sont pas acceptées) : {cible}"
+        return self._check_paths([str(c).split("::", 1)[0] for c in cibles], "tests")
 
-        program = Path(tokens[0]).name
-        args = tokens[1:]
-        if program == "pytest":
-            return self._check_pytest_args(args)
-        if program in {"python", "python3"}:
-            if args[:2] == ["-m", "pytest"]:
-                return self._check_pytest_args(args[2:])
-            if args[:2] == ["-m", "py_compile"]:
-                return self._check_paths(args[2:], "py_compile")
-            if args and args[0].endswith(".py") and not args[0].startswith("-"):
-                ok, reason = self._check_paths([args[0]], "script")
-                if ok and self._inside(args[0], self.source_dir):
-                    return False, "exécution dans _source_vba interdite"
-                return ok, reason
-        return False, (
-            f"commande non autorisée : « {command} ». Autorisées : `python -m pytest`, "
-            "`python -m py_compile <fichiers>`, `python <script du projet>.py`"
-        )
+    def _check_syntaxe(self, tool_input: dict) -> tuple[bool, str]:
+        fichiers = tool_input.get("fichiers") or []
+        if not fichiers:
+            return False, "aucun fichier à vérifier"
+        if any(not str(f).endswith(".py") for f in fichiers):
+            return False, "seuls des fichiers .py peuvent être vérifiés"
+        return self._check_paths([str(f) for f in fichiers], "vérification de syntaxe")
 
-    def _check_pytest_args(self, args: list[str]) -> tuple[bool, str]:
-        paths = []
-        skip_next = False
-        for arg in args:
-            if skip_next:  # valeur de -k / -m : une expression, pas un chemin
-                skip_next = False
-                continue
-            if arg.startswith(("-p", "--import-mode", "--rootdir", "--confcutdir", "--pyargs")):
-                return False, f"option pytest non autorisée : {arg}"
-            if arg in {"-k", "-m"}:
-                skip_next = True
-            elif arg.startswith("-"):
-                value = arg.split("=", 1)[1] if "=" in arg else ""
-                if "/" in value:
-                    paths.append(value)
-            else:
-                paths.append(arg.split("::", 1)[0])
-        return self._check_paths(paths, "pytest")
+    def _check_script(self, tool_input: dict) -> tuple[bool, str]:
+        script = str(tool_input.get("script") or "")
+        if not script.endswith(".py"):
+            return False, f"seul un script .py du projet peut être exécuté : {script}"
+        ok, raison = self._check_paths([script], "script")
+        if not ok:
+            return ok, raison
+        if self._inside(script, self.source_dir) or self._inside(script, self.library_dir):
+            return False, "exécution d'un fichier de _source_vba/ ou bibliotheque/ interdite"
+        for argument in tool_input.get("arguments") or []:
+            argument = str(argument)
+            if (Path(argument).is_absolute() or ".." in Path(argument).parts) and not self._inside(argument, self.project_dir):
+                return False, f"argument pointant hors du projet refusé : {argument}"
+        return True, "script du projet"
 
     def _check_paths(self, paths: list[str], label: str) -> tuple[bool, str]:
         for p in paths:

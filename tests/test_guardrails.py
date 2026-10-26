@@ -92,51 +92,40 @@ def test_code_python_autorise(g):
     assert autorise(g, "Write", file_path="RAPPORT.md", content="Le VBA utilisait `import subprocess`")
 
 
-# ------------------------------------------------------------------ commandes
+# ------------------------------------------------------------------ outils d'exécution (pas de terminal)
 
-@pytest.mark.parametrize(
-    "commande",
-    [
-        "python -m pytest -q",
-        "python3 -m pytest tests/test_module1.py::test_total -x",
-        "python -m pytest -q -k 'total and not vide'",
-        "pytest tests",
-        "python -m py_compile module1.py tests/test_module1.py",
-        "python tests/generer_donnees_fictives.py",
-    ],
-)
-def test_commandes_autorisees(g, commande):
-    assert autorise(g, "Bash", command=commande), g.check("Bash", {"command": commande})
+TESTS, SYNTAXE, SCRIPT = "mcp__vba2py__lancer_tests", "mcp__vba2py__verifier_syntaxe", "mcp__vba2py__executer_script"
 
 
-@pytest.mark.parametrize(
-    "commande",
-    [
-        "rm -rf tests",
-        "curl https://exemple.com",
-        "pip install xlwings",
-        "python -m pytest && rm -rf /",
-        "python -m pytest; curl x",
-        "python -m pytest | tee log",
-        "python -m pytest > /tmp/log",
-        "echo $(cat /etc/passwd)",
-        "python -c 'import os'",
-        "python /tmp/script.py",
-        "python _source_vba/x.py",
-        "python -m pytest /home",
-        "python -m pytest ../..",
-        "python -m pytest -p mon_plugin",
-        "python -m pytest --rootdir=/",
-        "cd .. ",
-        "git status",
-    ],
-)
-def test_commandes_refusees(g, commande):
-    assert not autorise(g, "Bash", command=commande)
+def test_lancer_tests(g, projet):
+    assert autorise(g, TESTS)
+    assert autorise(g, TESTS, cibles=["tests/test_module1.py::test_total"], marqueur="excel_reel", mot_cle="total and not vide")
+    assert not autorise(g, TESTS, cibles=["/home"])
+    assert not autorise(g, TESTS, cibles=["../.."])
+    assert not autorise(g, TESTS, cibles=["-p", "mon_plugin"])  # options interdites
 
 
-def test_bash_en_arriere_plan_refuse(g):
-    assert not autorise(g, "Bash", command="python -m pytest", run_in_background=True)
+def test_verifier_syntaxe(g):
+    assert autorise(g, SYNTAXE, fichiers=["module1.py", "tests/test_module1.py"])
+    assert not autorise(g, SYNTAXE, fichiers=[])
+    assert not autorise(g, SYNTAXE, fichiers=["../autre.py"])
+    assert not autorise(g, SYNTAXE, fichiers=["RAPPORT.md"])
+
+
+def test_executer_script(g, projet):
+    assert autorise(g, SCRIPT, script="tests/generer_donnees_fictives.py")
+    assert autorise(g, SCRIPT, script="tests/generer_donnees_fictives.py", arguments=["tests/fixtures", "--graine", "3"])
+    assert not autorise(g, SCRIPT, script="/tmp/script.py")
+    assert not autorise(g, SCRIPT, script="_source_vba/x.py")
+    assert not autorise(g, SCRIPT, script="bibliotheque/excel_com.py")
+    assert not autorise(g, SCRIPT, script="lancer.sh")
+    assert not autorise(g, SCRIPT, script="tests/generer_donnees_fictives.py", arguments=["/etc"])
+    assert not autorise(g, SCRIPT, script="tests/generer_donnees_fictives.py", arguments=["../../ailleurs"])
+
+
+def test_terminal_refuse(g):
+    for outil in ["Bash", "PowerShell"]:
+        assert not autorise(g, outil, command="python -m pytest")
 
 
 def test_outils_inconnus_refuses(g):
@@ -152,7 +141,7 @@ def test_hook_refus_et_journal(g, tmp_path):
     assert sortie["hookSpecificOutput"]["permissionDecision"] == "deny"
     assert "Refusé par les garde-fous" in sortie["hookSpecificOutput"]["permissionDecisionReason"]
 
-    ok = asyncio.run(g.pre_tool_use_hook({"tool_name": "Bash", "tool_input": {"command": "python -m pytest"}}, "id2", None))
+    ok = asyncio.run(g.pre_tool_use_hook({"tool_name": TESTS, "tool_input": {}}, "id2", None))
     assert ok == {}
 
     journal = [json.loads(l) for l in (tmp_path / "journal.jsonl").read_text().splitlines()]
