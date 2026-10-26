@@ -39,12 +39,21 @@
 <!-- Étapes numérotées avec les fichiers de tests/fixtures/ : ouvrir quel fichier, lancer
      quelle macro, avec quels réglages, puis quelle commande Python, et quoi comparer. -->
 
-## 9. Tests
+## 9. Documentation utilisée
+
+<!-- Si _source_vba/documentation/ n'existe pas : écrire « Aucune documentation fournie. »
+     Sinon :
+     | Document | Portée | Utilisé pour |   (règles, sens des colonnes, exemples → tests...)
+     puis « Écarts entre la documentation et le code » : pour chaque écart, le document et le
+     passage (page ou section), ce que dit la documentation, ce que fait le code (qui a été
+     traduit), et le test concerné. Écrire « Aucun écart constaté. » s'il n'y en a pas. -->
+
+## 10. Tests
 
 <!-- vba2py:debut tests -->
 <!-- vba2py:fin tests -->
 
-## 10. Extraction
+## 11. Extraction
 
 <!-- vba2py:debut extraction -->
 <!-- vba2py:fin extraction -->

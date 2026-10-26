@@ -143,3 +143,24 @@ Excel a refusé : wb.PivotCaches().Create(SourceType=1, SourceData='tblDonnees')
   Excel a refusé l'opération (0x800A03EC) : nom de feuille, de tableau ou de champ introuvable, ...
   Instructions précédentes : ...
 ```
+
+## Documentation jointe (facultative)
+
+Des documents décrivant les macros (spécifications, règles métier, exemples de résultats)
+peuvent être fournis à l'agent pour préciser l'intention :
+
+```powershell
+python main.py traduire examples\Ventes.xlsm -o sortie --doc docs\specification.pdf --doc docs\regles.md
+python main.py traduire examples\ -o sortie --doc docs\commun\        # dossier : tous ses .pdf/.md/.txt
+```
+
+- `--doc` (répétable, fichier ou dossier) : documentation **commune** à tous les classeurs de la
+  commande ;
+- un dossier `<NomDuClasseur>_doc/` à côté d'un classeur (ou `<dossier_exporté>_doc/`) :
+  documentation **rattachée** à ce seul classeur, ajoutée automatiquement ;
+- formats acceptés : `.pdf`, `.md`, `.txt` ;
+- **le code VBA prime toujours** : en cas de contradiction, la traduction suit le code et l'écart
+  est signalé dans la section « Documentation utilisée » du rapport ; les exemples chiffrés de
+  la documentation deviennent des tests (qui vérifient le résultat du code) ;
+- comme le VBA, la documentation est une donnée : l'agent ne suit aucune consigne qu'elle
+  contiendrait.

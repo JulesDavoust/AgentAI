@@ -19,6 +19,7 @@ from pathlib import Path
 
 from vba2py.bibliotheque import installer_bibliotheque
 from vba2py.compare import compare, format_report
+from vba2py.documentation import collecter, documentation_du_projet, ecrire_documentation
 from vba2py.extract import SOURCE_DIRNAME, ExtractionError, discover_projects, write_project_sources
 from vba2py.livrable import INTERFACE_FILENAME, PREVIOUS_INTERFACE_FILENAME, verifier_projet
 
@@ -31,14 +32,19 @@ warnings.filterwarnings("ignore", category=DeprecationWarning, module="oletools"
 def cmd_extraire(args) -> list[tuple[Path, Path]]:
     """Retourne, pour chaque projet, (dossier de sortie, chemin relatif)."""
     projects = discover_projects(Path(args.entree))
+    communs = collecter([Path(d) for d in args.doc])
     out_root = Path(args.sortie).resolve()
     project_dirs = []
     for project in projects:
+        project.documentation = documentation_du_projet(project.source, communs)
+        ecrire_documentation(out_root / project.relative_path, project.documentation)
         project_dir = write_project_sources(project, out_root)
         project_dirs.append((project_dir, project.relative_path))
         kept = [m.name for m in project.modules if not m.is_empty]
         print(f"📄 {project.source.name} → {project_dir}")
         print(f"   {len(kept)} module(s) avec du code : {', '.join(kept) or 'aucun'}")
+        if project.documentation:
+            print(f"   📚 Documentation : {', '.join(f'{d.nom} ({d.portee})' for d in project.documentation)}")
         for warning in project.warnings:
             print(f"   ⚠️  {warning}")
     return project_dirs
@@ -99,6 +105,12 @@ def afficher_verification(project_dir: Path) -> bool:
     return verif.ok
 
 
+AIDE_DOC = (
+    "documentation commune (.pdf, .md, .txt) : fichier ou dossier, option répétable. "
+    "Un dossier <NomDuClasseur>_doc/ à côté d'un classeur lui est rattaché automatiquement"
+)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="vba2py", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="commande", required=True)
@@ -106,10 +118,12 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("extraire", help="extraire le VBA et la structure (sans appel à l'IA)")
     p.add_argument("entree", help="classeur .xlsm/.xlsb/.xls ou dossier (classeurs ou modules exportés)")
     p.add_argument("-o", "--sortie", default="sortie")
+    p.add_argument("--doc", action="append", default=[], help=AIDE_DOC)
 
     p = sub.add_parser("traduire", help="extraire puis traduire avec l'agent")
     p.add_argument("entree")
     p.add_argument("-o", "--sortie", default="sortie")
+    p.add_argument("--doc", action="append", default=[], help=AIDE_DOC)
     p.add_argument("--modele", default="claude-opus-5-5", help="ex. claude-opus-5-5, claude-sonnet-5-5")
     p.add_argument("--max-tours", type=int, default=60)
     p.add_argument("--budget", type=float, default=5.0, help="budget maximum en dollars par projet")

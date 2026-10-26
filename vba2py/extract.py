@@ -53,6 +53,7 @@ class Project:
     modules: list[Module] = field(default_factory=list)
     workbook_structure: dict | None = None
     warnings: list[str] = field(default_factory=list)
+    documentation: list = field(default_factory=list)  # documentation.Document
 
 
 # --------------------------------------------------------------------------- utilitaires
@@ -295,7 +296,8 @@ def discover_projects(input_path: Path) -> list[Project]:
     directories = [input_path] + sorted(
         p
         for p in input_path.rglob("*")
-        if p.is_dir() and not any(part.startswith((".", "_")) for part in p.relative_to(input_path).parts)
+        if p.is_dir()
+        and not any(part.startswith((".", "_")) or part.endswith("_doc") for part in p.relative_to(input_path).parts)
     )
     for directory in directories:
         files = [f for f in sorted(directory.iterdir()) if f.is_file()]
@@ -394,6 +396,11 @@ def extraction_summary(project: Project) -> str:
         n = len(strip_vba_headers(m.code).splitlines())
         status = "vide (ignoré)" if m.is_empty else "extrait"
         lines.append(f"| {m.name} | {m.kind} | {n} | {status} |")
+    if project.documentation:
+        lines += ["", "## Documentation fournie", "", "| Document | Portée |", "|---|---|"]
+        lines += [f"| {d.nom} | {d.portee} |" for d in project.documentation]
+    else:
+        lines += ["", "Aucune documentation fournie."]
     if project.warnings:
         lines += ["", "## Avertissements", ""] + [f"- {w}" for w in project.warnings]
     return "\n".join(lines) + "\n"
