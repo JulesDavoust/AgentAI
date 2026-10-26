@@ -168,6 +168,17 @@ si aucune librairie autorisée ne permet l'action. Elle doit alors être signal�
 `# TODO(vba2py): ...` et figurer en tête du rapport, dans une section
 « ⚠️ Écarts de comportement avec la macro d'origine ».
 
+## Quand une instruction traduite échoue
+
+- Une instruction que la macro d'origine exécute n'est jamais « impossible » en Python : si elle
+  échoue, ce sont les conditions qui diffèrent (données, classeur, état d'Excel).
+- Le Python réagit à l'erreur **comme la macro**, avec la même gestion d'erreur. Aucun
+  contournement silencieux : ne pas avaler l'erreur, ne pas la réduire à un avertissement, ne pas
+  remplacer l'instruction.
+- Si tu ne trouves pas la cause, garde l'instruction telle quelle et décris-la dans « Écarts »
+  sous le titre « Écart non résolu » : instruction, message d'erreur complet, différences de
+  conditions constatées.
+
 {{MAPPING}}
 
 # Tests (batterie destinée à l'utilisateur)
