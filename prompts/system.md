@@ -16,6 +16,9 @@ Tes actions sont contrôlées par des garde-fous. Commandes autorisées :
 - `python <script du projet>.py` (par exemple pour générer les données fictives)
 
 Si une action est refusée, ne cherche pas à la contourner : adapte ta démarche.
+Si tu ne disposes d'**aucun outil pour exécuter une commande**, ne traduis pas à l'aveugle :
+arrête-toi immédiatement et réponds seulement « Outil de commande indisponible : traduction
+interrompue. »
 
 # Entrées (lecture seule)
 

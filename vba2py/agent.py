@@ -47,6 +47,37 @@ def build_system_prompt() -> str:
     return system.replace("{{MAPPING}}", mapping).replace("{{RAPPORT_MODELE}}", "```markdown\n" + rapport + "```")
 
 
+def trouver_git_bash() -> str | None:
+    """Même recherche que Claude Code sous Windows : sans Git Bash, l'agent n'a aucun outil de commande."""
+    import shutil
+
+    variable = os.environ.get("CLAUDE_CODE_GIT_BASH_PATH")
+    if variable and Path(variable).name.lower() in {"bash.exe", "sh.exe", "bash", "sh"} and Path(variable).exists():
+        return variable
+    for chemin in (r"C:\Program Files\Git\bin\bash.exe", r"C:\Program Files (x86)\Git\bin\bash.exe"):
+        if Path(chemin).exists():
+            return chemin
+    git = shutil.which("git")
+    if git:
+        candidat = Path(git).resolve().parent.parent / "bin" / "bash.exe"
+        if candidat.exists():
+            return str(candidat)
+    return None
+
+
+def problemes_environnement() -> list[str]:
+    """Ce qui empêcherait l'agent de lancer les tests : vérifié avant toute traduction."""
+    if sys.platform == "win32" and trouver_git_bash() is None:
+        return [
+            "Git Bash est introuvable : sous Windows, l'agent en a besoin pour lancer Python et pytest "
+            "(sans lui, il traduirait sans pouvoir tester).\n"
+            "   → Installez Git pour Windows (https://git-scm.com/download/win), rouvrez le terminal ;\n"
+            "   → ou, si Git est installé ailleurs : "
+            "setx CLAUDE_CODE_GIT_BASH_PATH \"C:\\chemin\\vers\\Git\\bin\\bash.exe\""
+        ]
+    return []
+
+
 def build_options(
     project_dir: Path,
     journal_path: Path | None,
