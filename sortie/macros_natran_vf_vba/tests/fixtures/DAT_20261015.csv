@@ -1,0 +1,9 @@
+Date;Ville;Latitude;Longitude;Volume_GWh;Temperature_C
+2026-10-15;Lille;50.63;3.06;96.4;7.5
+2026-10-15;Paris;48.86;2.35;149.9;8
+2026-10-15;Nantes;47.22;-1.55;71.2;9.1
+2026-10-15;VilleInconnue;abc;;xx;
+2026-10-15;Oslo;59.9;10.7;10;1
+2026-10-15;Lyon;45,76;4.84;110;6
+
+15/10/2026;Dijon;47.32;5.04;45;5

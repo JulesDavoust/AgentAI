@@ -1,0 +1,65 @@
+<!DOCTYPE html><html><head><meta charset='utf-8'>
+<title>Suivi distribution gaz - carte</title>
+<style>html,body{height:100%;margin:0;font-family:Arial,sans-serif;background:#fff}
+#panel{padding:8px;background:#f2f2f2;border-bottom:1px solid #ccc}
+#panel *{margin-right:8px}#svg{width:100%;height:calc(100% - 78px);display:block}
+#info{padding:6px 8px;height:26px;font-size:14px;border-top:1px solid #ccc;background:#fafafa}
+circle{cursor:pointer}circle:hover{stroke-width:3}</style></head><body>
+<div id='panel'><b>Distribution gaz</b> Date <select id='selDate'></select>
+Region <select id='selReg'></select><button onclick='play()'>Lecture / Pause</button>
+<span id='tot'></span><small>Genere le 27/10/2026 09:33 - VBATF_V2</small></div>
+<svg id='svg' viewBox='0 0 640 640' preserveAspectRatio='xMidYMid meet'>
+<path id='fr' fill='#eaf0e0' stroke='#6b7a5e' stroke-width='1.5' stroke-linejoin='round'/>
+<path id='co' fill='#eaf0e0' stroke='#6b7a5e' stroke-width='1.5' stroke-linejoin='round'/>
+<g id='g'></g></svg>
+<div id='info'>Cliquer sur une region pour le detail.</div><script>
+var DATA=[['2026-10-13','Nord',108.3,12.1],['2026-10-13','Sud',84.7,6.8],['2026-10-13','Est',86.4,6.1],['2026-10-13','Ouest',60.8,12.4],['2026-10-13','Centre',51.4,3.7],['2026-10-14','Nord',128.9,4.1],['2026-10-14','Sud',84.2,10.5],['2026-10-14','Est',71.7,4.5],['2026-10-14','Ouest',61.3,9.8],['2026-10-14','Centre',62.9,14.6],['2026-10-15','Nord',103.3,10.2],['2026-10-15','Sud',87.4,14.8],['2026-10-15','Est',83.1,6.9],['2026-10-15','Ouest',80.1,12.8],['2026-10-15','Centre',59,9.3],['2026-10-16','Nord',136.7,2.8],['2026-10-16','Sud',105.5,11.1],['2026-10-16','Est',75.9,5.3],['2026-10-16','Ouest',74.6,7],['2026-10-16','Centre',55.3,4],['2026-10-17','Nord',104,13.5],['2026-10-17','Sud',105.5,11.3],['2026-10-17','Est',89.1,12.9],['2026-10-17','Ouest',73.5,4.8],['2026-10-17','Centre',56.9,12.6],['2026-10-18','Nord',104.3,3.7],['2026-10-18','Sud',101,2.9],['2026-10-18','Est',69.5,12.5],['2026-10-18','Ouest',74,10.3],['2026-10-18','Centre',54.7,12.3],['2026-10-19','Nord',117.7,9.4],['2026-10-19','Sud',103.7,8.5],['2026-10-19','Est',87.3,4.9],['2026-10-19','Ouest',70.2,8.6],['2026-10-19','Centre',54.9,14.1],['2026-10-20','Nord',105.5,7.1],['2026-10-20','Sud',101.7,5.8],['2026-10-20','Est',84.7,13],['2026-10-20','Ouest',59.8,8.5],['2026-10-20','Centre',66.6,4.2],['2026-10-21','Nord',106.9,5.8],['2026-10-21','Sud',95.1,7.1],['2026-10-21','Est',70.6,4.3],['2026-10-21','Ouest',65.1,3.8],['2026-10-21','Centre',56.7,6.4],['2026-10-22','Nord',120.5,6.4],['2026-10-22','Sud',87.2,10.5],['2026-10-22','Est',90.8,10.2],['2026-10-22','Ouest',64.7,4.3],['2026-10-22','Centre',68.4,9.8],['2026-10-23','Nord',136.7,3.7],['2026-10-23','Sud',103,5.7],['2026-10-23','Est',86,11.7],['2026-10-23','Ouest',79.5,6.7],['2026-10-23','Centre',68.9,13.7],['2026-10-24','Nord',124.9,14.5],['2026-10-24','Sud',81.3,15.9],['2026-10-24','Est',78,14.9],['2026-10-24','Ouest',68.9,8.7],['2026-10-24','Centre',59.4,7.5],['2026-10-25','Nord',122.7,5.4],['2026-10-25','Sud',107.4,9.2],['2026-10-25','Est',68.7,3.8],['2026-10-25','Ouest',76.1,4.5],['2026-10-25','Centre',51.8,8.2],['2026-10-26','Nord',124.1,5.9],['2026-10-26','Sud',102.1,3.3],['2026-10-26','Est',68.2,11.5],['2026-10-26','Ouest',64.6,15.8],['2026-10-26','Centre',52.5,14.2],['2026-10-27','Nord',119.1,14.1],['2026-10-27','Sud',94.3,10.6],['2026-10-27','Est',70.9,2.1],['2026-10-27','Ouest',69.6,15],['2026-10-27','Centre',58.7,5.8]];
+var COORD={'Nord':[50.63,3.06],'Sud':[43.30,5.37],'Est':[48.57,7.75],'Ouest':[47.22,-1.55],'Centre':[47.08,2.40]};
+var FR=[[2.55,51.09],[1.85,50.95],[1.60,50.73],[1.55,50.35],[1.38,50.06],[1.08,49.93],[0.37,49.76],[0.10,49.50],
+[0.25,49.43],[0.07,49.35],[-0.25,49.30],[-0.62,49.34],[-1.10,49.40],[-1.27,49.69],[-1.95,49.72],[-1.80,49.38],
+[-1.60,48.83],[-1.50,48.64],[-1.85,48.68],[-2.02,48.65],[-2.32,48.69],[-2.75,48.55],[-3.05,48.78],[-3.45,48.83],
+[-3.98,48.73],[-4.77,48.33],[-4.73,48.04],[-4.37,47.80],[-3.92,47.87],[-3.37,47.73],[-3.12,47.48],[-2.75,47.55],
+[-2.45,47.45],[-2.52,47.29],[-2.20,47.27],[-2.10,47.11],[-2.20,46.95],[-1.93,46.68],[-1.78,46.49],[-1.15,46.15],
+[-1.25,45.95],[-1.05,45.62],[-1.07,45.57],[-1.20,45.00],[-1.25,44.65],[-1.29,44.20],[-1.45,43.65],[-1.56,43.48],
+[-1.78,43.37],[-1.45,43.05],[-0.75,42.95],[-0.30,42.85],[0.20,42.75],[0.67,42.85],[1.00,42.80],[1.45,42.60],
+[1.75,42.50],[2.00,42.35],[2.50,42.35],[3.05,42.43],[3.03,42.70],[3.05,43.05],[3.70,43.40],[4.20,43.50],
+[4.80,43.35],[5.35,43.30],[5.93,43.10],[6.75,43.40],[7.00,43.55],[7.27,43.70],[7.53,43.78],[7.60,44.15],
+[6.95,44.40],[7.05,44.65],[6.75,45.00],[7.05,45.25],[6.80,45.55],[6.85,45.95],[6.80,46.38],[6.25,46.30],
+[6.05,46.20],[6.30,46.55],[6.40,46.80],[6.95,47.20],[7.15,47.50],[7.55,47.58],[7.55,48.00],[7.80,48.60],
+[8.20,48.98],[7.40,49.15],[6.35,49.45],[5.85,49.55],[5.45,49.50],[5.05,49.65],[4.85,49.95],[4.20,50.25],
+[3.60,50.35],[3.25,50.75],[2.60,50.85]];
+var CORSE=[[9.15,41.38],[9.40,41.60],[9.55,42.10],[9.45,42.70],[9.36,43.00],[9.30,42.70],[8.75,42.57],
+[8.60,42.28],[8.72,41.92],[8.90,41.67]];
+var K=60,C=0.688;
+function X(lon){return (lon+5.2)*C*K;}function Y(lat){return (51.4-lat)*K;}
+function path(a){return a.map(function(p,i){return (i?'L':'M')+X(p[0]).toFixed(1)+' '+Y(p[1]).toFixed(1);}).join('')+'Z';}
+document.getElementById('fr').setAttribute('d',path(FR));
+document.getElementById('co').setAttribute('d',path(CORSE));
+var NS='http://www.w3.org/2000/svg',g=document.getElementById('g');
+var dates=[],regs=[];
+DATA.forEach(function(r){if(dates.indexOf(r[0])<0)dates.push(r[0]);if(regs.indexOf(r[1])<0)regs.push(r[1]);});
+dates.sort();
+var selD=document.getElementById('selDate'),selR=document.getElementById('selReg');
+dates.forEach(function(d){selD.add(new Option(d,d));});
+selR.add(new Option('Toutes','*'));regs.forEach(function(r){selR.add(new Option(r,r));});
+selD.value=dates[dates.length-1];selR.value='Nord';
+var MAXV=Math.max.apply(null,DATA.map(function(r){return r[2];}));
+function color(v){var x=v/MAXV;return x>0.85?'#b30000':x>0.65?'#e34a33':x>0.45?'#fc8d59':'#fdcc8a';}
+function el(n,a){var e=document.createElementNS(NS,n);for(var k in a)e.setAttribute(k,a[k]);return e;}
+function draw(){while(g.firstChild)g.removeChild(g.firstChild);var d=selD.value,f=selR.value,tot=0;
+DATA.forEach(function(r){if(r[0]!==d)return;if(f!=='*'&&r[1]!==f)return;
+var c=COORD[r[1]];if(!c)return;tot+=r[2];
+var rad=12+34*r[2]/MAXV,cx=X(c[1]),cy=Y(c[0]);
+var ci=el('circle',{cx:cx,cy:cy,r:rad,fill:color(r[2]),'fill-opacity':0.8,stroke:'#333','stroke-width':1});
+var tt=el('title',{});tt.textContent=r[1]+' : '+r[2].toFixed(1)+' GWh';ci.appendChild(tt);
+ci.onclick=function(){document.getElementById('info').innerText=r[1]+' - '+d+' : '+r[2].toFixed(1)+' GWh, temperature '+r[3].toFixed(1)+' C';};
+g.appendChild(ci);
+var t=el('text',{x:cx,y:cy+4,'text-anchor':'middle','font-size':12,'font-weight':'bold',fill:'#222','pointer-events':'none'});
+t.textContent=r[1];g.appendChild(t);});
+document.getElementById('tot').innerText='Total affiche : '+tot.toFixed(1)+' GWh';}
+selD.onchange=draw;selR.onchange=draw;var timer=null;
+function play(){if(timer){clearInterval(timer);timer=null;return;}
+var i=dates.indexOf(selD.value);
+timer=setInterval(function(){i=(i+1)%dates.length;selD.value=dates[i];draw();},800);}
+draw();</script></body></html>
+

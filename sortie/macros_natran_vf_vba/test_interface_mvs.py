@@ -220,7 +220,7 @@ def interagir_mainframe(classeur, ligne=None, colonne=None, longueur="10", texte
         commun.journal.warning(str(erreur))
         return commun.Resultat(False, [], str(erreur))
     commun.journal.info(message)
-    wb.save(classeur)
+    # wb.save(classeur)
     return commun.Resultat(True, [], message)
 
 

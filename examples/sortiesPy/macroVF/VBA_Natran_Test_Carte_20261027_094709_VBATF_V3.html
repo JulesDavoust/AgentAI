@@ -1,0 +1,55 @@
+<!DOCTYPE html><html><head><meta charset='utf-8'>
+<title>Suivi distribution gaz - carte</title>
+<style>html,body{height:100%;margin:0;font-family:Arial,sans-serif;background:#fff}
+#panel{padding:8px;background:#f2f2f2;border-bottom:1px solid #ccc}
+#panel *{margin-right:8px}#svg{width:100%;height:calc(100% - 78px);display:block}
+#info{padding:6px 8px;height:26px;font-size:14px;border-top:1px solid #ccc;background:#fafafa}
+circle{cursor:pointer}circle:hover{stroke-width:3}</style></head><body>
+<div id='panel'><b>Distribution gaz - donnees du 27/10/2026</b> Ville <select id='selV'></select>
+<span id='tot'></span><small>Taille et couleur = volume | Genere le 27/10/2026 09:47 - VBATF_V3</small></div>
+<svg id='svg' viewBox='0 0 640 640' preserveAspectRatio='xMidYMid meet'>
+<path id='fr' fill='#eaf0e0' stroke='#6b7a5e' stroke-width='1.5' stroke-linejoin='round'/>
+<path id='co' fill='#eaf0e0' stroke='#6b7a5e' stroke-width='1.5' stroke-linejoin='round'/>
+<g id='g'></g></svg>
+<div id='info'>Cliquer sur une ville pour le detail.</div><script>
+var DATA=[['Lille',50.63,3.06,96.2,14.4],['Paris',48.86,2.35,171.3,14.8],['Strasbourg',48.57,7.75,84.1,15.4],['Nantes',47.22,-1.55,78.2,2.4],['Bordeaux',44.84,-0.58,92.7,15.9],['Toulouse',43.6,1.44,78.1,3.7],['Marseille',43.3,5.37,111.2,2.6],['Lyon',45.76,4.84,118.8,15],['Caen',49.18,-0.37,63.2,15],['Dijon',47.32,5.04,43.2,14.8]];
+var FR=[[2.55,51.09],[1.85,50.95],[1.60,50.73],[1.55,50.35],[1.38,50.06],[1.08,49.93],[0.37,49.76],[0.10,49.50],
+[0.25,49.43],[0.07,49.35],[-0.25,49.30],[-0.62,49.34],[-1.10,49.40],[-1.27,49.69],[-1.95,49.72],[-1.80,49.38],
+[-1.60,48.83],[-1.50,48.64],[-1.85,48.68],[-2.02,48.65],[-2.32,48.69],[-2.75,48.55],[-3.05,48.78],[-3.45,48.83],
+[-3.98,48.73],[-4.77,48.33],[-4.73,48.04],[-4.37,47.80],[-3.92,47.87],[-3.37,47.73],[-3.12,47.48],[-2.75,47.55],
+[-2.45,47.45],[-2.52,47.29],[-2.20,47.27],[-2.10,47.11],[-2.20,46.95],[-1.93,46.68],[-1.78,46.49],[-1.15,46.15],
+[-1.25,45.95],[-1.05,45.62],[-1.07,45.57],[-1.20,45.00],[-1.25,44.65],[-1.29,44.20],[-1.45,43.65],[-1.56,43.48],
+[-1.78,43.37],[-1.45,43.05],[-0.75,42.95],[-0.30,42.85],[0.20,42.75],[0.67,42.85],[1.00,42.80],[1.45,42.60],
+[1.75,42.50],[2.00,42.35],[2.50,42.35],[3.05,42.43],[3.03,42.70],[3.05,43.05],[3.70,43.40],[4.20,43.50],
+[4.80,43.35],[5.35,43.30],[5.93,43.10],[6.75,43.40],[7.00,43.55],[7.27,43.70],[7.53,43.78],[7.60,44.15],
+[6.95,44.40],[7.05,44.65],[6.75,45.00],[7.05,45.25],[6.80,45.55],[6.85,45.95],[6.80,46.38],[6.25,46.30],
+[6.05,46.20],[6.30,46.55],[6.40,46.80],[6.95,47.20],[7.15,47.50],[7.55,47.58],[7.55,48.00],[7.80,48.60],
+[8.20,48.98],[7.40,49.15],[6.35,49.45],[5.85,49.55],[5.45,49.50],[5.05,49.65],[4.85,49.95],[4.20,50.25],
+[3.60,50.35],[3.25,50.75],[2.60,50.85]];
+var CORSE=[[9.15,41.38],[9.40,41.60],[9.55,42.10],[9.45,42.70],[9.36,43.00],[9.30,42.70],[8.75,42.57],
+[8.60,42.28],[8.72,41.92],[8.90,41.67]];
+var K=60,C=0.688;
+function X(lon){return (lon+5.2)*C*K;}function Y(lat){return (51.4-lat)*K;}
+function path(a){return a.map(function(p,i){return (i?'L':'M')+X(p[0]).toFixed(1)+' '+Y(p[1]).toFixed(1);}).join('')+'Z';}
+document.getElementById('fr').setAttribute('d',path(FR));
+document.getElementById('co').setAttribute('d',path(CORSE));
+var NS='http://www.w3.org/2000/svg',g=document.getElementById('g');
+var selV=document.getElementById('selV');
+var names=DATA.map(function(r){return r[0];}).sort();
+selV.add(new Option('Toutes','*'));names.forEach(function(n){selV.add(new Option(n,n));});
+selV.value='Caen';
+var MAXV=Math.max.apply(null,DATA.map(function(r){return r[3];}));
+function color(v){var x=v/MAXV;return x>0.85?'#b30000':x>0.65?'#e34a33':x>0.45?'#fc8d59':'#fdcc8a';}
+function el(n,a){var e=document.createElementNS(NS,n);for(var k in a)e.setAttribute(k,a[k]);return e;}
+function draw(){while(g.firstChild)g.removeChild(g.firstChild);var f=selV.value,tot=0;
+DATA.forEach(function(r){if(f!=='*'&&r[0]!==f)return;tot+=r[3];
+var rad=8+26*r[3]/MAXV,cx=X(r[2]),cy=Y(r[1]);
+var ci=el('circle',{cx:cx,cy:cy,r:rad,fill:color(r[3]),'fill-opacity':0.8,stroke:'#333','stroke-width':1});
+var tt=el('title',{});tt.textContent=r[0]+' : '+r[3].toFixed(1)+' GWh';ci.appendChild(tt);
+ci.onclick=function(){document.getElementById('info').innerText=r[0]+' : '+r[3].toFixed(1)+' GWh, temperature '+r[4].toFixed(1)+' C';};
+g.appendChild(ci);
+var t=el('text',{x:cx,y:cy+rad+13,'text-anchor':'middle','font-size':11,'font-weight':'bold',fill:'#222',stroke:'#fff','stroke-width':3,'paint-order':'stroke','pointer-events':'none'});
+t.textContent=r[0];g.appendChild(t);});
+document.getElementById('tot').innerText='Total affiche : '+tot.toFixed(1)+' GWh';}
+selV.onchange=draw;draw();</script></body></html>
+
