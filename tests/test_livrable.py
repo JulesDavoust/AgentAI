@@ -266,3 +266,12 @@ def test_etapes_excel_verifiees_sur_excel_reel(projet, test_excel, ok, attendu):
     assert verif.ok is ok, verif.erreurs
     assert verif.resultat_excel.startswith(attendu)
     assert "Tests sur Excel réel" in (projet / "RAPPORT.md").read_text(encoding="utf-8")
+
+
+def test_projet_pilotant_excel_detecte(tmp_path):
+    from vba2py.livrable import utilise_excel
+
+    (tmp_path / "macro.py").write_text("from bibliotheque.excel_com import xl\n", encoding="utf-8")
+    assert not utilise_excel(tmp_path)
+    (tmp_path / "macro.py").write_text("with session_classeur(classeur) as wb:\n    pass\n", encoding="utf-8")
+    assert utilise_excel(tmp_path)

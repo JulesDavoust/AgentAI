@@ -312,6 +312,15 @@ def section_extraction(project_dir: Path) -> str:
 MARQUEUR_EXCEL = "excel_reel"
 
 
+def utilise_excel(project_dir: Path) -> bool:
+    """Le projet pilote-t-il Excel (classeur de la macro ou étapes Excel) ?"""
+    if (project_dir / "connecteurs" / "excel.py").exists():
+        return True
+    fichiers = list(project_dir.glob("*.py")) + list((project_dir / "connecteurs").glob("*.py"))
+    return any(re.search(r"\bsession_(classeur|excel)\b", f.read_text(encoding="utf-8", errors="replace"))
+               for f in fichiers)
+
+
 def verifier_excel_reel(project_dir: Path, verif: Verification) -> None:
     """Les étapes de connecteurs/excel.py doivent être testées sur un vrai Excel.
 
@@ -321,7 +330,7 @@ def verifier_excel_reel(project_dir: Path, verif: Verification) -> None:
     derniere = (result.stdout.strip().splitlines() or [""])[-1]
     if result.returncode == 5:  # aucun test sélectionné
         verif.erreurs.append(
-            f"connecteurs/excel.py existe mais aucun test marqué `{MARQUEUR_EXCEL}` ne l'exécute sur un vrai Excel"
+            f"le projet pilote Excel mais aucun test marqué `{MARQUEUR_EXCEL}` ne l'exécute sur un vrai Excel"
         )
         verif.resultat_excel = "❌ aucun test"
     elif result.returncode != 0:
@@ -365,7 +374,7 @@ def verifier_projet(project_dir: Path, interface_precedente: Path | None = None)
         verif.resultat_tests = derniere
         if result.returncode != 0:
             verif.erreurs.append(f"tests en échec : {derniere}\n{result.stdout[-3000:]}")
-        if (project_dir / "connecteurs" / "excel.py").exists():
+        if utilise_excel(project_dir):
             verifier_excel_reel(project_dir, verif)
 
     rapport_path = project_dir / REPORT_FILENAME

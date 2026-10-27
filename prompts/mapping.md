@@ -1,26 +1,69 @@
 # Correspondances VBA → Python
 
-Seules ces librairies sont autorisées dans le code produit : **bibliothèque standard Python,
-openpyxl, pandas, matplotlib, streamlit, pytest**, et **pywin32** uniquement dans le dossier
-`connecteurs/` (voir « Intégrations externes »).
-Interdits partout : `xlwings` (Excel n'est plus utilisé, openpyxl le remplace), `subprocess`,
-`eval`/`exec`, et tout accès réseau en dehors de `connecteurs/`.
+Librairies autorisées dans le code produit : **bibliothèque standard Python, openpyxl, pandas,
+matplotlib, pytest**, les modules fournis dans `bibliotheque/`, et **pywin32** uniquement dans le
+dossier `connecteurs/` (voir « Intégrations externes »). Interdits partout : `xlwings`,
+`subprocess`, `eval`/`exec`, et tout accès réseau en dehors de `connecteurs/`.
 
-## Objets Excel
+## Le classeur de la macro (`ThisWorkbook`) : toujours dans Excel
+
+**Règle** : tout ce que la macro lit ou modifie dans `ThisWorkbook` / `ActiveWorkbook` (feuilles,
+cellules, tableaux, formats, graphiques, tableaux croisés, enregistrement) passe **par Excel**,
+avec le **même modèle objet** que la macro, instruction par instruction :
+
+```python
+from bibliotheque.excel_com import session_classeur, xl, rgb, en_datetime, pour_excel
+
+def lancer_pipeline_complet(classeur, ..., sans_enregistrer=False, ouvrir_classeur=session_classeur):
+    with ouvrir_classeur(classeur, enregistrer=not sans_enregistrer) as wb:   # wb = ThisWorkbook
+        ensure_structure(wb)
+        ...
+```
+
+- Si le classeur est **déjà ouvert dans Excel**, la commande agit directement dessus, comme la
+  macro (l'utilisateur voit le résultat, saisit dans les cellules, enregistre lui-même). S'il est
+  **fermé**, il est ouvert, modifié puis **enregistré** (option `--sans-enregistrer` pour ne pas
+  l'enregistrer). C'est ce qui rend la traduction fidèle : feuilles, Log et historique restent
+  dans le classeur d'un lancement à l'autre, et rien n'est perdu (boutons, macros, objets
+  qu'openpyxl ne sait pas conserver).
+- Chaque procédure VBA devient une fonction Python qui reçoit `wb` (et non un chemin), dans le
+  module Python de la macro. Les calculs purs (simulations, validations, construction de
+  textes, HTML, CSV) sont dans des fonctions séparées, testables sans Excel.
+- `session_classeur` est un **paramètre injectable** (`ouvrir_classeur`) : les tests passent un
+  `EnregistreurCOM` ou une fausse session.
+- **openpyxl ne sert plus qu'aux tests** : créer les classeurs fictifs et relire les résultats.
+  Ne jamais écrire `ThisWorkbook` avec openpyxl (une macro qui lit un classeur fermé **autre**
+  que le sien peut le lire avec openpyxl).
+
+| VBA | Python (Excel) |
+|---|---|
+| `ThisWorkbook`, `ActiveWorkbook` | `wb` fourni par `session_classeur` |
+| `Workbooks.Open chemin` (autre classeur) | `autre = wb.Application.Workbooks.Open(str(Path(chemin).resolve()))`, refermé comme dans la macro |
+| `ThisWorkbook.SaveCopyAs chemin` | `wb.SaveCopyAs(str(Path(chemin).resolve()))` (chemin complet obligatoire) |
+| `ThisWorkbook.Save`, `SaveAs` | `wb.Save()`, `wb.SaveAs(chemin_absolu, format)` |
+| `Worksheets("X")`, `Sheets(1)`, `Worksheets.Add(After:=...)` | `wb.Worksheets("X")`, `wb.Sheets(1)`, `wb.Worksheets.Add(After=...)` (index 1 comme en VBA) |
+| `Range("A1").Value`, `Cells(l, c).Value`, `.Formula`, `.NumberFormat` | `ws.Range("A1").Value`, `ws.Cells(l, c).Value`, `.Formula` (en anglais, Excel calcule), `.NumberFormat` |
+| `Range("A1:C1").Value = Array(a, b, c)` | `ws.Range("A1:C1").Value = (a, b, c)` ; plusieurs lignes : tuple de tuples |
+| `Cells(Rows.Count, 1).End(xlUp).Row` | `ws.Cells(ws.Rows.Count, 1).End(xl.xlUp).Row` |
+| `ListObjects("t")`, `.ListRows.Add`, `ListObjects.Add(xlSrcRange, ...)` | mêmes appels : `ws.ListObjects("t")`, `.ListRows.Add()`, `ws.ListObjects.Add(xl.xlSrcRange, ...)` |
+| `AutoFilter`, `Sort`, `AutoFit`, `WorksheetFunction.X` | mêmes appels (`wb.Application.WorksheetFunction.Sum(...)`) |
+| Mise en forme (`Font.Bold`, `Interior.Color = RGB(...)`, `ColumnWidth`) | mêmes propriétés ; `RGB(r, v, b)` → `rgb(r, v, b)` |
+| `ChartObjects`, `PivotCaches`, `PivotTables`, `Shapes`, `Hyperlinks.Add` | mêmes appels |
+| `ws.Activate`, `Range.Select`, `ActiveWindow.DisplayGridlines`, `ActiveWindow.Zoom` | mêmes appels (`wb.Application.ActiveWindow.Zoom = 100`) : visibles quand le classeur est ouvert |
+| `ws.Visible = xlSheetHidden` | `ws.Visible = xl.xlSheetHidden` |
+| `Application.ScreenUpdating`, `DisplayAlerts`, `EnableEvents`, `Calculation` | mêmes réglages sur `wb.Application`, remis comme la macro le fait |
+| Date lue dans une cellule / écrite dans une cellule | `en_datetime(valeur)` / `ws.Cells(l, c).Value = pour_excel(une_date)` |
+| `MsgBox` / `InputBox` | voir les lignes ci-dessous (`bibliotheque.dialogues`) |
+
+Traduction des appels : collection avec parenthèses (`wb.Worksheets("X")`, `ws.ChartObjects()`),
+élément avec son index ou son nom, méthode sans argument avec `()` (`.Delete()`, `.Clear()`),
+propriété sans parenthèses (`.Value`, `.Count`), arguments nommés identiques (`After:=x` →
+`After=x`), `Array(...)` → tuple, constantes `xlUp` → `xl.xlUp`.
+
+## Autres correspondances
 
 | VBA | Python |
 |---|---|
-| `Workbooks.Open`, `ThisWorkbook`, `ActiveWorkbook` | `openpyxl.load_workbook(chemin)` ; le chemin est **un paramètre** de la fonction, jamais un classeur « actif » implicite |
-| `Workbook.Save` / `SaveAs` | `wb.save(chemin)` (chemin en paramètre) |
-| `Worksheets("X")`, `Sheets(1)` | `wb["X"]`, `wb.worksheets[0]` (attention : index 0 en Python) |
-| `Range("A1").Value`, `Cells(l, c).Value` | `ws["A1"].value`, `ws.cell(row=l, column=c).value` (lignes/colonnes restent 1-indexées dans openpyxl) |
-| `Range("A1").Formula` | `ws["A1"] = "=SOMME(...)"` → écrire la formule **en anglais** (`=SUM(...)`) ; openpyxl ne calcule pas les formules |
-| `Cells(Rows.Count, 1).End(xlUp).Row` | dernière ligne non vide calculée explicitement (boucle ou `ws.max_row` puis remontée) |
-| `UsedRange`, `CurrentRegion` | `ws.iter_rows(...)` / `pandas.read_excel(..., sheet_name=...)` |
-| Boucles sur des plages, filtres, tris, `WorksheetFunction.Sum/VLookup/Match/CountIf` | `pandas` (`DataFrame`, `merge`, `groupby`, `loc`) ou Python pur pour les cas simples |
-| `AutoFilter`, `Sort` | `DataFrame.query` / `sort_values`, puis réécriture avec openpyxl si le résultat doit rester dans le classeur |
-| Mise en forme (`Font`, `Interior.Color`, `NumberFormat`) | `openpyxl.styles` (`Font`, `PatternFill`, `cell.number_format`) |
-| `ChartObjects.Add`, graphiques dans une feuille | **vrai graphique Excel** avec `openpyxl.chart` (`LineChart`, `BarChart`... + `Reference` sur les cellules sources), au même emplacement que dans la macro (`ws.add_chart(chart, "J5")`), avec le même titre et le même type. Ne jamais remplacer un graphique de feuille par une image |
 | Graphique exporté hors du classeur (image jointe à un mail, PNG) | `matplotlib`, export PNG dans `--dossier-sortie` (`plt.savefig`, puis `plt.close`) |
 | `MsgBox texte, boutons, titre` | `from bibliotheque.dialogues import msgbox, vbYesNo, vbQuestion, vbYes...` puis `msgbox(texte, boutons, titre)` : même texte, mêmes boutons, même titre, même valeur renvoyée. Un `MsgBox` d'information reste un `msgbox` (il attend la validation comme en VBA), pas un simple log |
 | `InputBox(invite, titre, defaut)` | `inputbox(invite, titre, defaut)` : Entrée = valeur par défaut, Annuler = `""`, comme VBA. Si l'interface prévoit une option pour cette saisie (`--saisie`) et qu'elle est fournie, sa valeur est utilisée **à la place** de la question |
@@ -28,14 +71,9 @@ Interdits partout : `xlwings` (Excel n'est plus utilisé, openpyxl le remplace),
 | Boucle de validation autour d'un `InputBox` (redemander tant que la saisie est invalide) | la même boucle en Python, avec les mêmes `msgbox` d'erreur |
 | `UserForm` | pas encore pris en charge : `# TODO(vba2py)` et section « Écarts » |
 | `Debug.Print` | `logging.debug` |
-| `Application.ScreenUpdating`, `Calculation`, `DisplayAlerts`, `EnableEvents` | à supprimer (aucun équivalent nécessaire) — le noter dans le rapport |
 | `Workbook_Open`, `Worksheet_Change` et autres événements | fonctions nommées (`au_demarrage_classeur()`, `sur_modification_feuille(cellules)`) appelées explicitement ; signaler dans le rapport qu'il n'y a plus de déclenchement automatique |
 | `Application.Run "Macro"` / `Application.Run "Module.Macro"` (macro **du même classeur**) | simple appel Python de la fonction traduite (import si elle est dans un autre module) ; si le nom est construit dynamiquement, un dictionnaire `{nom VBA: fonction}` |
 | `Application.Run "Autre.xlsm!Macro"` (macro d'**un autre classeur**) | jamais exécuté : `# TODO(vba2py)` + section « Écarts » |
-| `ws.Activate`, `Range.Select`, `ActiveWindow.DisplayGridlines`, `ActiveWindow.Zoom` | état dans lequel la macro laisse le classeur, enregistré avec openpyxl : `wb.active = ws`, `ws.sheet_view.selection[0].activeCell` / `.sqref`, `ws.sheet_view.showGridLines`, `ws.sheet_view.zoomScale` (pour la feuille concernée) |
-| `ws.Visible = xlSheetHidden` / `xlSheetVeryHidden` / `xlSheetVisible` | `ws.sheet_state = "hidden"` / `"veryHidden"` / `"visible"` (voir aussi « Feuilles masquées » dans `EXTRACTION.md`) |
-| `ws.Hyperlinks.Add Anchor:=cell, Address:=..., TextToDisplay:=...` | `cell.hyperlink = adresse` ; `cell.value = texte` ; `cell.style = "Hyperlink"` |
-| `ws.Hyperlinks.Delete` | `cell.hyperlink = None` pour chaque cellule qui en porte un |
 | `ThisWorkbook.FollowHyperlink chemin` (ouvrir un fichier ou une page) | `os.startfile(str(Path(chemin).resolve()))` dans `connecteurs/systeme.py` ; fonction injectable, bloquée dans les tests (fixture `autouse`) ; une constante comme `OPEN_MAP` devient une option (`--open-map`) |
 
 ## Fichiers, dates, chaînes
@@ -47,7 +85,7 @@ Interdits partout : `xlwings` (Excel n'est plus utilisé, openpyxl le remplace),
 | `Open chemin For Input As #f` + `Line Input #f, ligne` | `open(chemin, encoding="cp1252", newline="")` et lecture ligne par ligne sans le saut de ligne ; `EOF(f)` → fin de l'itération |
 | `Write #f, ...` | valeurs séparées par des virgules, textes entre guillemets, dates `#aaaa-mm-jj#` : reproduire exactement |
 | `Date`, `Now`, `DateAdd`, `DateDiff`, `DateSerial` | `datetime`, `timedelta` |
-| Dates stockées en numéro de série Excel | `openpyxl` les convertit déjà ; sinon `datetime(1899, 12, 30) + timedelta(days=n)` |
+| Dates stockées en numéro de série Excel | `datetime(1899, 12, 30) + timedelta(days=n)` |
 | `Format(x, "0.00")`, `Format(d, "dd/mm/yyyy")` | f-strings / `strftime` |
 | `Left`, `Mid`, `Right`, `Len`, `InStr` | tranches de chaînes ; **`Mid` et `InStr` sont 1-indexés, `InStr` renvoie 0 si absent** |
 | `Like` | `fnmatch.fnmatchcase` ou `re` |
@@ -84,55 +122,18 @@ Règles :
 - Le rapport indique les prérequis (Windows, Outlook installé et connecté au compte) et comment
   tester sans rien envoyer (`--mode-mail afficher`).
 
-## Ce qu'openpyxl ne sait pas faire : Excel piloté depuis Python
+## Excel piloté depuis Python : règles communes
 
-**Règle** : openpyxl par défaut. Quand une instruction VBA n'a pas d'équivalent **fidèle** en
-openpyxl, elle est exécutée par Excel lui-même : traduis-la **instruction par instruction**,
-avec le même modèle objet Excel, dans `connecteurs/excel.py`, en utilisant
-`bibliotheque.excel_com` (`session_excel`, `xl`, `preparer_feuille`). Jamais de substitut
-approximatif : pas de valeurs figées calculées avec pandas à la place d'un tableau croisé, pas
-d'image matplotlib à la place d'un graphique Excel, pas de formule laissée non calculée quand la
-macro relit son résultat.
-
-Cas typiques (liste non exhaustive : applique la règle à tout le reste) :
-
-| VBA | Pourquoi Excel |
-|---|---|
-| `PivotCaches`, `PivotTables`, `PivotFields`, `AddDataField`, `CalculatedFields`, `Group`, `CurrentPage`, `SlicerCaches` | openpyxl ne crée ni ne modifie les tableaux croisés |
-| Graphique d'un tableau croisé (`SetSourceData pt.TableRange1`), `Chart.Export`, `CopyPicture` | dépend du tableau croisé, ou rendu fait par Excel |
-| Relire une valeur calculée par une formule (`Range("B2").Value` après `.Formula`), `Calculate` | openpyxl ne calcule pas les formules |
-| `ExportAsFixedFormat` (PDF), `PrintOut`, `PageSetup` avancé | rendu et impression |
-| `RefreshAll`, `QueryTables`, `ListObject.QueryTable`, connexions de données | actualisation de sources externes |
-| `GoalSeek`, Solveur | moteur de calcul d'Excel |
-| `AutoFilter` / `Sort` dont l'état doit rester réellement appliqué dans le classeur, `AutoFit` exact | openpyxl n'écrit que des critères, ne masque/trie/mesure rien lui-même |
-
-Exceptions (jamais exécutées, même via Excel) : `Application.Run` vers un autre classeur,
-`SendKeys`, `Shell` → `# TODO(vba2py)` et section « Écarts ».
-
-Organisation :
-- `connecteurs/excel.py` contient une fonction par étape VBA concernée (ex.
-  `creer_visuel_excel(wb, ...)`), qui reçoit le `Workbook` Excel et reprend les instructions dans
-  le même ordre que la macro, plus une fonction d'entrée qui ouvre la session :
-  `with session_excel(chemin) as wb: creer_visuel_excel(wb, ...)`. Une seule session par fichier :
-  regroupe les étapes Excel consécutives.
-- Ordre du pipeline : étapes openpyxl → `wb.save(chemin)` → session Excel sur ce fichier → étapes
-  suivantes (si une étape openpyxl suit, recharge le fichier avec `load_workbook`). Si la macro
-  crée le tableau puis fait `SaveCopyAs`, c'est la copie enregistrée qui passe dans Excel.
-- Le nettoyage d'une feuille qu'Excel va remplir (`ChartObjects(i).Delete`,
-  `PivotTables(i).TableRange2.Clear`, `Cells.Clear`) se fait avec `preparer_feuille(ws)` côté
-  openpyxl ; les mêmes instructions peuvent aussi être traduites dans l'étape Excel.
-- Traduction des appels : collection avec parenthèses (`wb.PivotCaches()`, `ws.ChartObjects()`),
-  élément avec son index ou son nom (`pt.PivotFields("Date")`), méthode sans argument avec `()`
-  (`.Delete()`, `.Clear()`), arguments nommés identiques (`Periods:=` → `Periods=`),
-  `Array(...)` → tuple, constantes `xlRowField` → `xl.xlRowField`.
-- La fonction d'entrée est un **paramètre injectable** de la fonction métier (comme
-  `envoyer_mail`) ; `conftest.py` bloque `excel_com.ouvrir_excel` (fixture `autouse`), sauf pour
-  les tests marqués `excel_reel`.
-- Si Excel refuse une instruction, `session_excel` lève `ErreurExcel`, dont le message cite
-  l'instruction refusée et explique le code d'erreur : ne l'avale pas, journalise `str(erreur)`
-  en entier.
+- Exceptions (jamais exécutées) : `Application.Run` vers un autre classeur, `SendKeys`, `Shell`
+  → `# TODO(vba2py)` et section « Écarts ».
+- Si Excel refuse une instruction, la session lève `ErreurExcel`, dont le message cite
+  l'instruction refusée, le message d'Excel et les objets utilisés : ne l'avale pas, journalise
+  `str(erreur)` en entier (et voir « Quand une instruction traduite échoue »).
+- `conftest.py` bloque `bibliotheque.excel_com.ouvrir_excel` et
+  `bibliotheque.excel_com.trouver_classeur_ouvert` (fixture `autouse`, qui renvoie `None` pour
+  le second), sauf pour les tests marqués `excel_reel`.
 - `requirements.txt` contient `pywin32; sys_platform == "win32"` ; le rapport indique le
-  prérequis (Windows, Excel installé, fichier fermé dans Excel).
+  prérequis (Windows, Excel installé) et les deux modes (classeur ouvert / fermé).
 
 ## Pièges sémantiques à respecter
 
@@ -163,6 +164,6 @@ Organisation :
 - **Arrondis** : `Round` et `CInt`/`CLng` font un arrondi bancaire (comme `round()` Python) ; `Int` arrondit vers le bas, `Fix` tronque vers zéro.
 - **Entiers** : `Integer` VBA est sur 16 bits (dépassement à 32 767) — signaler si le code pourrait en dépendre.
 - **Comparaisons de chaînes** : `Option Compare Text` → comparaisons insensibles à la casse.
-- **`Empty`, `Null`, `Nothing`, `Variant`** : une cellule vide vaut `None` en openpyxl ; `""` et `0` ne sont pas équivalents à `None` en Python.
+- **`Empty`, `Null`, `Nothing`, `Variant`** : une cellule vide vaut `None` (lue par Excel ou openpyxl) ; `""` et `0` ne sont pas équivalents à `None` en Python.
 - **Gestion d'erreurs** : `On Error Resume Next` → `try/except` ciblé autour de l'instruction concernée ; `On Error GoTo Label` → `try/except/finally`. Ne jamais avaler toutes les erreurs silencieusement.
 - **Booléens** : `True` vaut `-1` en VBA ; rare, mais à signaler si le code fait de l'arithmétique dessus.

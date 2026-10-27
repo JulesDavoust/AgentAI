@@ -7,6 +7,8 @@ graphique croisé, segments, recalcul des formules, export PDF, impression...) e
 **instruction par instruction** vers le même modèle objet Excel, depuis Python. Ce module fournit
 seulement la partie commune et délicate :
 
+- `session_classeur(chemin)` : le classeur de la macro (`ThisWorkbook`) — celui déjà ouvert dans
+  Excel s'il l'est (modifié en direct, pas enregistré), sinon ouvert, modifié puis enregistré ;
 - `session_excel(chemin)` : ouvre le classeur dans une instance d'Excel séparée et invisible,
   sans exécuter ses macros, enregistre puis referme tout, même en cas d'erreur ; si Excel refuse
   une instruction, `ErreurExcel` indique laquelle ;
@@ -41,6 +43,8 @@ from __future__ import annotations
 
 import datetime
 import decimal
+import logging
+import os
 import re
 import sys
 from contextlib import contextmanager
@@ -68,6 +72,8 @@ CONSTANTES = {
     "xlBarClustered": 57, "xlBarStacked": 58, "xlPie": 5, "xlDoughnut": -4120, "xlArea": 1,
     "xlXYScatter": -4169, "xlXYScatterLines": 74, "xlRows": 1, "xlColumns": 2,
     "xlCategory": 1, "xlValue": 2, "xlLegendPositionBottom": -4107, "xlLegendPositionRight": -4152,
+    # Feuilles
+    "xlSheetVisible": -1, "xlSheetHidden": 0, "xlSheetVeryHidden": 2,
     # Plages, tableaux, recherche
     "xlUp": -4162, "xlDown": -4121, "xlToLeft": -4159, "xlToRight": -4161,
     "xlYes": 1, "xlNo": 2, "xlGuess": 0, "xlSrcRange": 1,
@@ -151,6 +157,103 @@ def session_excel(chemin_classeur, *, enregistrer: bool = True, excel=None):
             _deballer(wb).Close(False)
         if instance_creee:
             excel.Quit()
+
+
+class ClasseurVerrouille(RuntimeError):
+    """Le classeur est ouvert ailleurs (autre utilisateur, OneDrive...) et ne peut pas être modifié."""
+
+
+def trouver_classeur_ouvert(chemin_classeur):
+    """Le classeur s'il est déjà ouvert dans un Excel de l'utilisateur, sinon None.
+
+    Excel inscrit chaque classeur ouvert dans la table des objets actifs de Windows : on y
+    cherche le chemin complet du fichier.
+    """
+    if sys.platform != "win32":
+        return None
+    try:
+        import pythoncom
+        import win32com.client
+    except ImportError:
+        return None
+    cible = os.path.normcase(str(Path(chemin_classeur).resolve()))
+    table = pythoncom.GetRunningObjectTable()
+    contexte = pythoncom.CreateBindCtx(0)
+    for moniker in table:
+        try:
+            nom = moniker.GetDisplayName(contexte, None)
+        except pythoncom.com_error:
+            continue
+        if os.path.normcase(nom) == cible:
+            classeur = win32com.client.Dispatch(table.GetObject(moniker).QueryInterface(pythoncom.IID_IDispatch))
+            try:
+                classeur = win32com.client.gencache.EnsureDispatch(classeur)
+            except Exception:
+                pass
+            return classeur
+    return None
+
+
+@contextmanager
+def session_classeur(chemin_classeur, *, enregistrer: bool = True, excel=None, trouver=None):
+    """Le classeur de la macro (`ThisWorkbook`), dans Excel, tracé comme `session_excel`.
+
+    - **Déjà ouvert dans Excel** : la traduction agit directement sur ce classeur, comme la macro.
+      Rien n'est enregistré ni fermé : l'utilisateur voit le résultat et enregistre quand il veut,
+      exactement comme après une macro VBA.
+    - **Fermé** : il est ouvert dans une instance d'Excel invisible (macros du classeur
+      désactivées), puis **enregistré** à la fin — comme « lancer la macro puis enregistrer » —
+      sauf si `enregistrer=False` (option `--sans-enregistrer`), et refermé. En cas d'erreur non
+      gérée, rien n'est enregistré.
+    `excel` / `trouver` : remplacés dans les tests.
+    """
+    chemin = str(Path(chemin_classeur).resolve())
+    if not Path(chemin).exists():
+        raise FileNotFoundError(chemin)
+    ouvert = (trouver or trouver_classeur_ouvert)(chemin)
+    if ouvert is not None:
+        logging.getLogger(__name__).info(
+            "Classeur ouvert dans Excel : modifications faites directement dedans (à enregistrer vous-même)."
+        )
+        yield TraceurCOM(ouvert, "wb")
+        return
+    instance_creee = excel is None
+    excel = excel if excel is not None else ouvrir_excel()
+    wb = None
+    try:
+        wb = TraceurCOM(excel, "excel").Workbooks.Open(chemin)
+        if _deballer(wb).ReadOnly is True:
+            raise ClasseurVerrouille(
+                f"{chemin} est ouvert ailleurs (autre utilisateur, synchronisation...) : impossible de "
+                "l'enregistrer. Fermez-le, ou ouvrez-le dans votre Excel avant de lancer la commande."
+            )
+        yield wb
+        if enregistrer:
+            wb.Save()
+    finally:
+        if wb is not None:
+            _deballer(wb).Close(False)
+        if instance_creee:
+            excel.Quit()
+
+
+def rgb(rouge: int, vert: int, bleu: int) -> int:
+    """VBA `RGB(r, v, b)` : la couleur sous forme d'entier, comme Excel l'attend."""
+    return rouge + vert * 256 + bleu * 65536
+
+
+def en_datetime(valeur):
+    """Date lue dans une cellule par Excel (pywintypes) → `datetime` Python sans fuseau horaire."""
+    if isinstance(valeur, datetime.datetime):
+        return datetime.datetime(valeur.year, valeur.month, valeur.day, valeur.hour, valeur.minute, valeur.second)
+    return valeur
+
+
+def pour_excel(valeur):
+    """Valeur Python à écrire dans une cellule : une `date` devient un `datetime` (seul type accepté)."""
+    if isinstance(valeur, datetime.date) and not isinstance(valeur, datetime.datetime):
+        return datetime.datetime(valeur.year, valeur.month, valeur.day)
+    return valeur
 
 
 def excel_disponible() -> bool:

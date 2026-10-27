@@ -117,27 +117,40 @@ tools/ExportVBA.bas     macro d'export des modules depuis Excel
 tests/                  tests de l'outil (sans appel à l'IA) : python -m pytest
 ```
 
-## Ce qu'openpyxl ne sait pas faire : Excel piloté depuis Python (branche `pivot-excel`)
+## Le classeur de la macro : toujours dans Excel
 
-Règle de traduction : openpyxl par défaut ; tout ce qu'openpyxl ne sait pas faire fidèlement
-(tableaux croisés dynamiques sous toutes leurs formes, graphiques croisés, segments, recalcul
-des formules, export PDF, impression, actualisation de données...) est exécuté **par Excel
-lui-même**. L'agent traduit ces instructions VBA une à une vers le même modèle objet Excel,
-dans `connecteurs/excel.py` : aucune liste de cas à prévoir, toute fonction qu'une macro
-utilise est disponible.
+Tout ce que la macro fait dans `ThisWorkbook` est traduit instruction par instruction vers le
+même modèle objet Excel, et exécuté **par Excel** (`bibliotheque/excel_com.py`, fourni à chaque
+projet). openpyxl ne sert plus qu'aux tests (classeurs fictifs, relecture des résultats).
 
-Le module testé `bibliotheque/excel_com.py`, fourni à chaque projet (l'agent ne peut pas le
-modifier), apporte la partie commune :
-- `session_excel(chemin)` : instance d'Excel séparée et invisible, macros du classeur
-  désactivées, chemin complet, enregistrement puis fermeture garantie même en cas d'erreur ;
-- `xl` : constantes Excel (`xl.xlRowField`, `xl.xlSum`...) ;
-- `EnregistreurCOM` : faux Excel pour les tests, qui note chaque instruction reçue ; les tests
-  comparent cette séquence aux instructions de la macro ;
-- `preparer_feuille(ws)` : nettoyage côté openpyxl avant qu'Excel ne remplisse la feuille.
+- **Classeur ouvert dans Excel** : la commande agit directement dessus, comme la macro ; tu vois
+  le résultat, tu peux saisir dans les cellules (écran simulé, par exemple) et tu enregistres
+  quand tu veux. La commande n'enregistre jamais un classeur ouvert.
+- **Classeur fermé** : il est ouvert dans un Excel invisible (macros désactivées), modifié, puis
+  **enregistré** — comme « lancer la macro puis enregistrer » : feuilles, Log et historique
+  s'accumulent d'un lancement à l'autre, boutons et macros sont conservés.
+  `--sans-enregistrer` : modifications faites sans enregistrer le classeur.
+- Un classeur ouvert ailleurs (autre utilisateur, synchronisation) est signalé clairement au
+  lieu d'une erreur « Permission denied ».
+- Les éléments propres à Excel (tableaux croisés, graphiques, segments, recalcul des formules,
+  export PDF...) suivent naturellement : ce sont les mêmes instructions que dans la macro.
 
-Prérequis à l'exécution des scripts traduits : Windows, Excel installé, `pywin32`, fichier
-fermé dans Excel. Le test sur Excel réel (`tests/test_excel_com.py::test_excel_reel`) ne
-s'exécute que sous Windows.
+Prérequis à l'exécution des scripts traduits : Windows, Excel installé, `pywin32`.
+
+## Boîtes de dialogue
+
+`MsgBox` et `InputBox` deviennent des questions dans le terminal (`bibliotheque/dialogues.py`),
+avec les mêmes boutons, la même valeur renvoyée et la même validation que VBA :
+
+```
+[Mainframe - Lire / Modifier]
+Que veux-tu faire sur le mainframe ?
+oui / non / annuler ? non
+```
+
+Entrée seule = valeur par défaut de l'`InputBox` ; `!annuler` = bouton Annuler. Quand une
+commande a une option pour une saisie (ex. `--saisie Nord`), elle remplace la question. Les tests
+fournissent les réponses à l'avance (`dialogues.simuler([...])`).
 
 ### Vérification sur Excel réel
 

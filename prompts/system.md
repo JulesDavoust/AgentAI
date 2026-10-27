@@ -51,7 +51,6 @@ connecteurs/                      appels vers d'autres applications, si le VBA e
   __init__.py
   outlook.py                      mails Outlook
   systeme.py                      ouverture de fichiers (FollowHyperlink), si le VBA en fait
-  excel.py                        ce qu'openpyxl ne sait pas faire (voir la table de correspondance)
 tests/
   __init__.py
   conftest.py                     fixtures pytest (chemins vers les données fictives)
@@ -116,7 +115,10 @@ avec une justification. vba2py le vérifie, ainsi que la présence des macros re
 4. Chaque `InputBox` : le nom de la variable VBA qui reçoit la saisie (`saisie` → `--saisie`),
    valeur par défaut `None` : option absente → la question est posée dans le terminal
    (`bibliotheque.dialogues.inputbox`), option fournie → sa valeur remplace la saisie.
-5. Aucun autre argument, aucun alias, aucun argument positionnel supplémentaire.
+5. `--sans-enregistrer` (booléen) pour chaque commande dont la macro **modifie** le classeur :
+   classeur fermé → modifications faites sans l'enregistrer (par défaut il est enregistré ; un
+   classeur ouvert dans Excel n'est jamais enregistré par la commande, comme en VBA).
+6. Aucun autre argument, aucun alias, aucun argument positionnel supplémentaire.
 
 ## interface.json
 
@@ -198,20 +200,21 @@ si aucune librairie autorisée ne permet l'action. Elle doit alors être signal�
 - Les tests qui écrivent des fichiers utilisent `tmp_path` et ne modifient jamais `tests/fixtures/`.
 - Couvre pour chaque fonction publique : cas nominal (avec valeurs attendues calculées à la main,
   commentées), cas limites (plage vide, valeurs manquantes, une seule ligne), erreurs attendues.
-- Étapes Excel (`connecteurs/excel.py`) : chaque fonction d'étape est testée avec
-  `EnregistreurCOM("wb")` ; le test vérifie que **chaque instruction du bloc VBA** a son
-  équivalent, dans le même ordre (`wb.instructions()`, `wb.appels(...)`, `wb.affectations(...)`).
-  Le pipeline est testé avec une fausse fonction d'entrée : paramètres, chemin absolu et existant,
-  ordre des étapes (fichier enregistré avant, mail après). Ne reteste pas `bibliotheque/`.
-- **Tests sur Excel réel** (obligatoires dès que `connecteurs/excel.py` existe) :
+- Procédures traduites (fonctions qui reçoivent `wb`) : testées avec `EnregistreurCOM("wb", reponses=...)`
+  (les `reponses` donnent les valeurs que les cellules lues doivent renvoyer) ; le test vérifie
+  que **chaque instruction du bloc VBA** a son équivalent, dans le même ordre
+  (`wb.instructions()`, `wb.appels(...)`, `wb.affectations(...)`). Les fonctions d'entrée sont
+  testées avec une fausse session (`ouvrir_classeur=...`) : ordre des étapes, `enregistrer`
+  selon `--sans-enregistrer`, chemins absolus. Ne reteste pas `bibliotheque/`.
+- **Tests sur Excel réel** (obligatoires : le projet pilote Excel) :
   `tests/test_excel_reel.py`, avec
   `pytestmark = [pytest.mark.excel_reel, pytest.mark.skipif(not excel_disponible(), reason="Excel indisponible")]`
   (`from bibliotheque.excel_com import excel_disponible`) ; le marqueur est déclaré dans
-  `conftest.py` (`pytest_configure`). Chaque test copie une fixture dans `tmp_path`, prépare le
-  fichier comme le pipeline (étapes openpyxl puis `wb.save`), appelle **la vraie** fonction
-  d'entrée de `connecteurs/excel.py`, recharge le fichier avec openpyxl et vérifie le résultat
-  produit par Excel (ex. `ws._pivots` : nom et plage du tableau croisé ; graphique avec
-  `pivotSource` ; valeurs calculées dans les cellules). Un test par fonction d'entrée au minimum.
+  `conftest.py` (`pytest_configure`). Chaque test copie une fixture dans `tmp_path`, appelle
+  **la vraie** fonction d'entrée de la commande (classeur fermé : ouvert, modifié et enregistré
+  par Excel), recharge le fichier avec openpyxl et vérifie le résultat produit par Excel
+  (feuilles créées, Log, valeurs calculées, `ws._pivots`, graphiques avec `pivotSource`...).
+  Un test par point d'entrée au minimum, plus un test `--sans-enregistrer` (fichier inchangé).
   Sur une machine sans Excel, ces tests sont ignorés et vba2py le signale ; sur une machine avec
   Excel, ils s'exécutent pendant ta boucle de correction : si l'un échoue avec `ErreurExcel`,
   lis l'instruction refusée (et les « Objets utilisés ») et corrige avant de rédiger le rapport.
@@ -219,7 +222,7 @@ si aucune librairie autorisée ne permet l'action. Elle doit alors être signal�
   Le comportement d'Excel en dépend : un format de date sur un champ de tableau croisé, un
   regroupement par mois, un tri ou un filtre échouent si la colonne contient du texte, des cellules
   vides ou des types mélangés. Vérifie donc, dans les fixtures **et dans ce que ton propre code
-  openpyxl écrit avant la session Excel** (ex. la traduction d'`EnsureStructure`) : vraies dates
+  écrit dans le classeur avant l'instruction refusée** (ex. la traduction d'`EnsureStructure`) : vraies dates
   (`date`/`datetime`, jamais du texte), vrais nombres, tableaux structurés dont la plage s'arrête
   exactement à la dernière ligne remplie, mêmes formats de cellule que la macro.
 - **Si Excel refuse une instruction que la macro exécute sans erreur**, soupçonne d'abord ces
@@ -229,7 +232,6 @@ si aucune librairie autorisée ne permet l'action. Elle doit alors être signal�
 - Graphiques Excel : vérifier, après rechargement du fichier enregistré, le type de graphique,
   sa feuille, son ancrage et les plages qu'il référence. Images matplotlib : PNG créé et non vide
   (backend `Agg`).
-- Streamlit : tester la logique métier (fonctions pures) ; l'interface n'est pas testée.
 - Dialogues : tout test qui traverse un `msgbox`/`inputbox` l'entoure de
   `with dialogues.simuler([...réponses...]) as journal:` et vérifie les textes affichés et les
   réponses dans `journal` (un `msgbox` sans choix ne consomme pas de réponse). Aucun test ne lit
@@ -238,9 +240,9 @@ si aucune librairie autorisée ne permet l'action. Elle doit alors être signal�
   ne modifie le test que s'il contredit le comportement du VBA d'origine, et justifie-le dans le rapport.
 - Aucun test ne doit déclencher une action réelle (mail, lancement d'Excel, réseau). `conftest.py`
   contient une fixture `autouse` qui remplace par une fonction levant une erreur : les fonctions
-  de `connecteurs/outlook.py` et `connecteurs/systeme.py`, les fonctions d'entrée de `connecteurs/excel.py` (celles qui
-  ouvrent une session) et `bibliotheque.excel_com.ouvrir_excel`. Les fonctions d'étape Excel,
-  qui reçoivent un `Workbook`, restent testables avec `EnregistreurCOM`. Les tests passent
+  de `connecteurs/outlook.py` et `connecteurs/systeme.py` et `bibliotheque.excel_com.ouvrir_excel` ;
+  `bibliotheque.excel_com.trouver_classeur_ouvert` renvoie `None` (sauf tests `excel_reel`).
+  Les procédures qui reçoivent `wb` restent testables avec `EnregistreurCOM`. Les tests passent
   explicitement une fausse fonction et vérifient ce qu'elle a reçu : destinataires, objet,
   corps, pièces jointes, mode envoyer ou afficher, paramètres des étapes Excel.
 - La fausse fonction vérifie aussi que chaque chemin transmis (pièce jointe, fichier) est

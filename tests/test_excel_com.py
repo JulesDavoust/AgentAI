@@ -228,3 +228,68 @@ def test_excel_reel(tmp_path):
     assert [p.name for p in ws._pivots] == ["TCD_Volume"]
     assert ws._charts and ws._charts[0].pivotSource is not None
     assert ws["B7"].value == 10  # valeurs calculées par Excel
+
+
+# ------------------------------------------------------------------ classeur de la macro (ThisWorkbook)
+
+from vba2py.bibliotheque.excel_com import ClasseurVerrouille, en_datetime, pour_excel, rgb, session_classeur  # noqa: E402
+
+
+@pytest.fixture
+def fichier(tmp_path):
+    chemin = tmp_path / "classeur.xlsm"
+    chemin.write_bytes(b"")
+    return chemin
+
+
+def test_classeur_deja_ouvert_modifie_sans_enregistrer(fichier):
+    ouvert = EnregistreurCOM("classeur_utilisateur")
+    excel = EnregistreurCOM("excel")
+    recherche = []
+    with session_classeur(fichier, excel=excel, trouver=lambda c: recherche.append(c) or ouvert) as wb:
+        wb.Worksheets("Log").Range("A1").Value = "INFO"
+    assert recherche == [str(fichier.resolve())]
+    assert ouvert.affectations(".Value") == ["INFO"]
+    assert not ouvert.appels(".Save") and not ouvert.appels(".Close")  # l'utilisateur enregistre lui-même
+    assert excel.journal == []  # aucune autre instance d'Excel
+
+
+def test_classeur_ferme_ouvert_modifie_et_enregistre(fichier, monkeypatch):
+    excel = EnregistreurCOM("excel", reponses={f"excel.Workbooks.Open({str(fichier.resolve())!r}).ReadOnly": False})
+    monkeypatch.setattr(excel_com, "ouvrir_excel", lambda: excel)
+    with session_classeur(fichier, trouver=lambda c: None) as wb:
+        wb.Worksheets("Log").Range("A1").Value = "INFO"
+    lignes = excel.instructions()
+    assert lignes[0] == f"excel.Workbooks.Open({str(fichier.resolve())!r})"
+    assert lignes[-3:] == [lignes[0] + ".Save()", lignes[0] + ".Close(False)", "excel.Quit()"]
+
+
+def test_classeur_ferme_sans_enregistrer(fichier):
+    excel = EnregistreurCOM("excel", reponses={f"excel.Workbooks.Open({str(fichier.resolve())!r}).ReadOnly": False})
+    with session_classeur(fichier, enregistrer=False, excel=excel, trouver=lambda c: None):
+        pass
+    assert not any(l.endswith(".Save()") for l in excel.instructions())
+
+
+def test_classeur_verrouille_ou_erreur_rien_enregistre(fichier):
+    cle = f"excel.Workbooks.Open({str(fichier.resolve())!r}).ReadOnly"
+    excel = EnregistreurCOM("excel", reponses={cle: True})
+    with pytest.raises(ClasseurVerrouille, match="ouvert ailleurs"):
+        with session_classeur(fichier, excel=excel, trouver=lambda c: None):
+            pass
+    excel = EnregistreurCOM("excel", reponses={cle: False})
+    with pytest.raises(ZeroDivisionError):
+        with session_classeur(fichier, excel=excel, trouver=lambda c: None):
+            1 / 0
+    lignes = excel.instructions()
+    assert not any(l.endswith(".Save()") for l in lignes) and lignes[-1].endswith(".Close(False)")
+
+
+def test_utilitaires():
+    import datetime as dt
+
+    assert rgb(8, 30, 60) == 8 + 30 * 256 + 60 * 65536
+    assert pour_excel(dt.date(2026, 10, 27)) == dt.datetime(2026, 10, 27)
+    assert pour_excel(5) == 5
+    avec_fuseau = dt.datetime(2026, 10, 27, 8, 30, tzinfo=dt.timezone.utc)
+    assert en_datetime(avec_fuseau) == dt.datetime(2026, 10, 27, 8, 30) and en_datetime("x") == "x"
