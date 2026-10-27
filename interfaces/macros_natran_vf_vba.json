@@ -1,0 +1,164 @@
+{
+  "points_entree": [
+    {
+      "script": "macro_initiale.py",
+      "sous_commande": null,
+      "procedure": "MacroInitiale.LancerPipelineComplet",
+      "justification": "bouton « Test »",
+      "fixture": "tests/fixtures/classeur_complet.xlsx",
+      "arguments": [
+        {"nom": "classeur", "remplace": "ThisWorkbook", "defaut": null},
+        {"nom": "--dossier-sortie", "remplace": "SaveFolder()", "defaut": "sortie"},
+        {"nom": "--mail-to", "remplace": "MAIL_TO", "defaut": "jdavoust201@headmind.com"},
+        {"nom": "--mail-cc", "remplace": "MAIL_CC", "defaut": ""},
+        {"nom": "--mode-mail", "remplace": "SEND_MAIL", "defaut": "envoyer"},
+        {"nom": "--saisie", "remplace": "InputBox de AppliquerFiltre (variable saisie)", "defaut": ""}
+      ]
+    },
+    {
+      "script": "macro_carte.py",
+      "sous_commande": null,
+      "procedure": "MacroCarte.LancerPipelineCarteV2",
+      "justification": "bouton « Test 2 (Carte) »",
+      "fixture": "tests/fixtures/classeur_complet.xlsx",
+      "arguments": [
+        {"nom": "classeur", "remplace": "ThisWorkbook", "defaut": null},
+        {"nom": "--dossier-sortie", "remplace": "SaveFolder()", "defaut": "sortie"},
+        {"nom": "--mail-to", "remplace": "MAIL_TO", "defaut": "jdavoust201@headmind.com"},
+        {"nom": "--mail-cc", "remplace": "MAIL_CC", "defaut": ""},
+        {"nom": "--mode-mail", "remplace": "SEND_MAIL", "defaut": "envoyer"},
+        {"nom": "--open-map", "remplace": "OPEN_MAP", "defaut": "oui"},
+        {"nom": "--saisie", "remplace": "InputBox de AppliquerFiltreV2 (variable saisie)", "defaut": ""}
+      ]
+    },
+    {
+      "script": "creation_csv.py",
+      "sous_commande": "generer-csv-du-jour-v3",
+      "procedure": "CréationCSV.GenererCSVDuJourV3",
+      "justification": "bouton « Création CSV »",
+      "fixture": "tests/fixtures/classeur_complet.xlsx",
+      "arguments": [
+        {"nom": "classeur", "remplace": "ThisWorkbook", "defaut": null},
+        {"nom": "--v3-csv-folder", "remplace": "V3_CSV_FOLDER", "defaut": "csv"}
+      ]
+    },
+    {
+      "script": "creation_csv.py",
+      "sous_commande": "generer-csv-date-v3",
+      "procedure": "CréationCSV.GenererCSVDateV3",
+      "justification": "macro publique appelée par aucune autre procédure (InputBox de date)",
+      "fixture": "tests/fixtures/classeur_complet.xlsx",
+      "arguments": [
+        {"nom": "classeur", "remplace": "ThisWorkbook", "defaut": null},
+        {"nom": "--v3-csv-folder", "remplace": "V3_CSV_FOLDER", "defaut": "csv"},
+        {"nom": "--saisie", "remplace": "InputBox de GenererCSVDateV3 (variable saisie)", "defaut": null}
+      ]
+    },
+    {
+      "script": "utilisation_csv.py",
+      "sous_commande": null,
+      "procedure": "UtilisationCSV.LancerPipelineCSVV3",
+      "justification": "bouton « Macro avec Intégration »",
+      "fixture": "tests/fixtures/classeur_complet.xlsx",
+      "arguments": [
+        {"nom": "classeur", "remplace": "ThisWorkbook", "defaut": null},
+        {"nom": "--dossier-sortie", "remplace": "SaveFolder()", "defaut": "sortie"},
+        {"nom": "--csv-folder", "remplace": "CSV_FOLDER", "defaut": "csv"},
+        {"nom": "--mail-to", "remplace": "MAIL_TO", "defaut": "tom.ferrandis@hotmail.com"},
+        {"nom": "--mail-cc", "remplace": "MAIL_CC", "defaut": ""},
+        {"nom": "--mode-mail", "remplace": "SEND_MAIL", "defaut": "envoyer"},
+        {"nom": "--open-map", "remplace": "OPEN_MAP", "defaut": "oui"},
+        {"nom": "--saisie", "remplace": "InputBox de DemanderVille (variable saisie)", "defaut": ""}
+      ]
+    },
+    {
+      "script": "simu_mainframe.py",
+      "sous_commande": "ouvrir-mainframe",
+      "procedure": "SimuMainframe.OuvrirMainframe",
+      "justification": "bouton « Création MVS »",
+      "fixture": "tests/fixtures/classeur_complet.xlsx",
+      "arguments": [{"nom": "classeur", "remplace": "ThisWorkbook", "defaut": null}]
+    },
+    {
+      "script": "simu_mainframe.py",
+      "sous_commande": "mvs-entree",
+      "procedure": "SimuMainframe.MVS_Entree",
+      "justification": "commentaire « TOUCHES DU TERMINAL (boutons optionnels sur la feuille MVS) »",
+      "fixture": "tests/fixtures/classeur_mvs.xlsx",
+      "arguments": [{"nom": "classeur", "remplace": "ThisWorkbook", "defaut": null}]
+    },
+    {
+      "script": "simu_mainframe.py",
+      "sous_commande": "mvs-effacer",
+      "procedure": "SimuMainframe.MVS_Effacer",
+      "justification": "commentaire « TOUCHES DU TERMINAL (boutons optionnels sur la feuille MVS) »",
+      "fixture": "tests/fixtures/classeur_mvs.xlsx",
+      "arguments": [{"nom": "classeur", "remplace": "ThisWorkbook", "defaut": null}]
+    },
+    {
+      "script": "simu_mainframe.py",
+      "sous_commande": "mvs-pf3",
+      "procedure": "SimuMainframe.MVS_PF3",
+      "justification": "commentaire « TOUCHES DU TERMINAL (boutons optionnels sur la feuille MVS) »",
+      "fixture": "tests/fixtures/classeur_mvs.xlsx",
+      "arguments": [{"nom": "classeur", "remplace": "ThisWorkbook", "defaut": null}]
+    },
+    {
+      "script": "test_interface_mvs.py",
+      "sous_commande": "interagir-mainframe",
+      "procedure": "TestInterfaceMVS.InteragirMainframe",
+      "justification": "bouton « Interra MVS »",
+      "fixture": "tests/fixtures/classeur_mvs.xlsx",
+      "arguments": [
+        {"nom": "classeur", "remplace": "ThisWorkbook", "defaut": null},
+        {"nom": "--ligne", "remplace": "InputBox de DemanderEntier : ligne (1 à 32)", "defaut": null},
+        {"nom": "--colonne", "remplace": "InputBox de DemanderEntier : colonne (1 à 80)", "defaut": null},
+        {"nom": "--longueur", "remplace": "InputBox de DemanderEntier : longueur à lire (mode lecture)", "defaut": "10"},
+        {"nom": "--texte", "remplace": "InputBox texte à écrire (mode écriture ; absent = lecture)", "defaut": null}
+      ]
+    },
+    {
+      "script": "test_interface_mvs.py",
+      "sous_commande": "demo-ecrire-et-lire",
+      "procedure": "TestInterfaceMVS.Demo_EcrireEtLire",
+      "justification": "commentaire « DEMOS (boutons optionnels) »",
+      "fixture": "tests/fixtures/classeur_mvs.xlsx",
+      "arguments": [{"nom": "classeur", "remplace": "ThisWorkbook", "defaut": null}]
+    },
+    {
+      "script": "test_interface_mvs.py",
+      "sous_commande": "demo-lire-saisie-manuelle",
+      "procedure": "TestInterfaceMVS.Demo_LireSaisieManuelle",
+      "justification": "commentaire « DEMOS (boutons optionnels) »",
+      "fixture": "tests/fixtures/classeur_mvs.xlsx",
+      "arguments": [{"nom": "classeur", "remplace": "ThisWorkbook", "defaut": null}]
+    },
+    {
+      "script": "test_interface_mvs.py",
+      "sous_commande": "demo-verifier-existence-fsic",
+      "procedure": "TestInterfaceMVS.Demo_VerifierExistenceFSIC",
+      "justification": "commentaire « DEMOS (boutons optionnels) »",
+      "fixture": "tests/fixtures/classeur_mvs.xlsx",
+      "arguments": [
+        {"nom": "classeur", "remplace": "ThisWorkbook", "defaut": null},
+        {"nom": "--isin", "remplace": "InputBox de Demo_VerifierExistenceFSIC (variable isin)", "defaut": "FR0010000003"}
+      ]
+    },
+    {
+      "script": "test_interface_mvs.py",
+      "sous_commande": "demo-extraction-vers-feuille",
+      "procedure": "TestInterfaceMVS.Demo_ExtractionVersFeuille",
+      "justification": "commentaire « DEMOS (boutons optionnels) »",
+      "fixture": "tests/fixtures/classeur_mvs.xlsx",
+      "arguments": [{"nom": "classeur", "remplace": "ThisWorkbook", "defaut": null}]
+    }
+  ],
+  "procedures_internes": [
+    {"procedure": "MacroInitiale.AjouterDonneesDuJour", "raison": "appelée seulement par LancerPipelineComplet"},
+    {"procedure": "MacroInitiale.AppliquerFiltre", "raison": "appelée seulement par LancerPipelineComplet"},
+    {"procedure": "MacroInitiale.CreerVisuel", "raison": "appelée seulement par LancerPipelineComplet"},
+    {"procedure": "MacroCarte.AppliquerFiltreV2", "raison": "appelée seulement par LancerPipelineCarteV2"},
+    {"procedure": "SimuMainframe.CreerEcranMVS", "raison": "appelée seulement par OuvrirMainframe"},
+    {"procedure": "SimuMainframe.ReinitialiserBaseMVS", "raison": "appelée seulement par CreerEcranMVS"}
+  ]
+}

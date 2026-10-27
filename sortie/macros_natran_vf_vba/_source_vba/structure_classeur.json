@@ -1,0 +1,104 @@
+{
+  "fichier": "macros_natran_vf.xlsm",
+  "feuilles": [
+    {
+      "nom": "Feuil1",
+      "visibilite": "visible",
+      "dimensions": "A1:A1",
+      "ligne_en_tete": null,
+      "colonnes": [],
+      "tableaux": []
+    },
+    {
+      "nom": "MVS_Base",
+      "visibilite": "masquée",
+      "dimensions": "A1:H7",
+      "ligne_en_tete": 1,
+      "colonnes": [
+        {
+          "colonne": "A",
+          "en_tete": "ISIN",
+          "types_observes": [
+            "texte"
+          ]
+        },
+        {
+          "colonne": "B",
+          "en_tete": "Libelle",
+          "types_observes": [
+            "texte"
+          ]
+        },
+        {
+          "colonne": "C",
+          "en_tete": "Statut",
+          "types_observes": [
+            "texte"
+          ]
+        },
+        {
+          "colonne": "D",
+          "en_tete": "Encours_MEUR",
+          "types_observes": [
+            "texte"
+          ]
+        },
+        {
+          "colonne": "E",
+          "en_tete": "Date_MAJ",
+          "types_observes": [
+            "texte"
+          ]
+        },
+        {
+          "colonne": "F",
+          "en_tete": "Commentaire",
+          "types_observes": [
+            "texte"
+          ]
+        },
+        {
+          "colonne": "H",
+          "en_tete": "",
+          "types_observes": []
+        }
+      ],
+      "tableaux": []
+    }
+  ],
+  "boutons": [
+    {
+      "feuille": "Feuil1",
+      "texte": "Test",
+      "macro": "LancerPipelineComplet"
+    },
+    {
+      "feuille": "Feuil1",
+      "texte": "Test 2 (Carte)",
+      "macro": "LancerPipelineCarteV2"
+    },
+    {
+      "feuille": "Feuil1",
+      "texte": "Création CSV",
+      "macro": "GenererCSVDuJourV3"
+    },
+    {
+      "feuille": "Feuil1",
+      "texte": "Macro avec Intégration",
+      "macro": "LancerPipelineCSVV3"
+    },
+    {
+      "feuille": "Feuil1",
+      "texte": "Création MVS",
+      "macro": "OuvrirMainframe"
+    },
+    {
+      "feuille": "Feuil1",
+      "texte": "Interra MVS",
+      "macro": "InteragirMainframe"
+    }
+  ],
+  "plages_nommees": [],
+  "formules_exemples": [],
+  "note": "Structure uniquement : aucune valeur du classeur n'est copiée."
+}

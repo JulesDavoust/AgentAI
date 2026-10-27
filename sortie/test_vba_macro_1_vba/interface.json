@@ -1,0 +1,19 @@
+{
+  "script": "marco_25_10.py",
+  "procedure_principale": "LancerPipelineComplet",
+  "fixture_principale": "tests/fixtures/classeur_complet.xlsx",
+  "arguments": [
+    {"nom": "classeur", "remplace": "ThisWorkbook", "defaut": null},
+    {"nom": "--dossier-sortie", "remplace": "SaveFolder()", "defaut": "sortie"},
+    {"nom": "--sheet-visuel", "remplace": "SHEET_VISUEL", "defaut": "Feuille1"},
+    {"nom": "--sheet-data", "remplace": "SHEET_DATA", "defaut": "Feuille2"},
+    {"nom": "--sheet-log", "remplace": "SHEET_LOG", "defaut": "Log"},
+    {"nom": "--table-name", "remplace": "TABLE_NAME", "defaut": "tblDonnees"},
+    {"nom": "--file-title", "remplace": "FILE_TITLE", "defaut": "VBA_Natran_Test"},
+    {"nom": "--file-suffix", "remplace": "FILE_SUFFIX", "defaut": "VBATF"},
+    {"nom": "--mail-to", "remplace": "MAIL_TO", "defaut": "jdavoust201@headmind.com"},
+    {"nom": "--mail-cc", "remplace": "MAIL_CC", "defaut": ""},
+    {"nom": "--mode-mail", "remplace": "SEND_MAIL", "defaut": "envoyer"},
+    {"nom": "--saisie", "remplace": "InputBox (saisie)", "defaut": ""}
+  ]
+}
