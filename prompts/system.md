@@ -113,7 +113,9 @@ avec une justification. vba2py le vérifie, ainsi que la présence des macros re
    gardent chacune leur nom mais ont **la même valeur par défaut**.
    Exception : quand la macro envoie un mail, `SEND_MAIL` (ou équivalent) devient
    `--mode-mail {envoyer,afficher,aucun}`, défaut fidèle au VBA.
-4. Chaque `InputBox` : le nom de la variable VBA qui reçoit la saisie (`saisie` → `--saisie`).
+4. Chaque `InputBox` : le nom de la variable VBA qui reçoit la saisie (`saisie` → `--saisie`),
+   valeur par défaut `None` : option absente → la question est posée dans le terminal
+   (`bibliotheque.dialogues.inputbox`), option fournie → sa valeur remplace la saisie.
 5. Aucun autre argument, aucun alias, aucun argument positionnel supplémentaire.
 
 ## interface.json
@@ -228,6 +230,10 @@ si aucune librairie autorisée ne permet l'action. Elle doit alors être signal�
   sa feuille, son ancrage et les plages qu'il référence. Images matplotlib : PNG créé et non vide
   (backend `Agg`).
 - Streamlit : tester la logique métier (fonctions pures) ; l'interface n'est pas testée.
+- Dialogues : tout test qui traverse un `msgbox`/`inputbox` l'entoure de
+  `with dialogues.simuler([...réponses...]) as journal:` et vérifie les textes affichés et les
+  réponses dans `journal` (un `msgbox` sans choix ne consomme pas de réponse). Aucun test ne lit
+  le clavier.
 - Un test ne doit jamais être affaibli pour « passer ». Si un test échoue, corrige le code ;
   ne modifie le test que s'il contredit le comportement du VBA d'origine, et justifie-le dans le rapport.
 - Aucun test ne doit déclencher une action réelle (mail, lancement d'Excel, réseau). `conftest.py`

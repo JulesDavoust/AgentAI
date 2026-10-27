@@ -22,8 +22,11 @@ Interdits partout : `xlwings` (Excel n'est plus utilisé, openpyxl le remplace),
 | Mise en forme (`Font`, `Interior.Color`, `NumberFormat`) | `openpyxl.styles` (`Font`, `PatternFill`, `cell.number_format`) |
 | `ChartObjects.Add`, graphiques dans une feuille | **vrai graphique Excel** avec `openpyxl.chart` (`LineChart`, `BarChart`... + `Reference` sur les cellules sources), au même emplacement que dans la macro (`ws.add_chart(chart, "J5")`), avec le même titre et le même type. Ne jamais remplacer un graphique de feuille par une image |
 | Graphique exporté hors du classeur (image jointe à un mail, PNG) | `matplotlib`, export PNG dans `--dossier-sortie` (`plt.savefig`, puis `plt.close`) |
-| `UserForm`, `InputBox` | **Streamlit** (`st.text_input`, `st.selectbox`, `st.button`...). La logique métier reste dans des fonctions pures, testables sans Streamlit |
-| `MsgBox` (information) | `logging.info` ou valeur de retour ; `MsgBox` avec choix (vbYesNo) → paramètre booléen de la fonction |
+| `MsgBox texte, boutons, titre` | `from bibliotheque.dialogues import msgbox, vbYesNo, vbQuestion, vbYes...` puis `msgbox(texte, boutons, titre)` : même texte, mêmes boutons, même titre, même valeur renvoyée. Un `MsgBox` d'information reste un `msgbox` (il attend la validation comme en VBA), pas un simple log |
+| `InputBox(invite, titre, defaut)` | `inputbox(invite, titre, defaut)` : Entrée = valeur par défaut, Annuler = `""`, comme VBA. Si l'interface prévoit une option pour cette saisie (`--saisie`) et qu'elle est fournie, sa valeur est utilisée **à la place** de la question |
+| `Application.InputBox(..., Type:=n)` | `application_inputbox(invite, titre, defaut, type_=n)` : même validation du type, Annuler = `False` |
+| Boucle de validation autour d'un `InputBox` (redemander tant que la saisie est invalide) | la même boucle en Python, avec les mêmes `msgbox` d'erreur |
+| `UserForm` | pas encore pris en charge : `# TODO(vba2py)` et section « Écarts » |
 | `Debug.Print` | `logging.debug` |
 | `Application.ScreenUpdating`, `Calculation`, `DisplayAlerts`, `EnableEvents` | à supprimer (aucun équivalent nécessaire) — le noter dans le rapport |
 | `Workbook_Open`, `Worksheet_Change` et autres événements | fonctions nommées (`au_demarrage_classeur()`, `sur_modification_feuille(cellules)`) appelées explicitement ; signaler dans le rapport qu'il n'y a plus de déclenchement automatique |
